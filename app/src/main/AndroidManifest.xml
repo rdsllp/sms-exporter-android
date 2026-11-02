@@ -2,14 +2,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- SPIKE: permissions + components needed to be eligible for the SMS role -->
+    <!-- Permissions + components needed to be eligible for the SMS role -->
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_MMS" />
     <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
 
     <application
+        android:enableOnBackInvokedCallback="true"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -43,7 +45,7 @@
 
         <!-- SMS role requirement: SMS_DELIVER receiver -->
         <receiver
-            android:name=".spike.SmsDeliverReceiver"
+            android:name=".role.SmsDeliverReceiver"
             android:exported="true"
             android:permission="android.permission.BROADCAST_SMS">
             <intent-filter>
@@ -53,7 +55,7 @@
 
         <!-- SMS role requirement: WAP_PUSH_DELIVER receiver for MMS -->
         <receiver
-            android:name=".spike.MmsDeliverReceiver"
+            android:name=".role.MmsDeliverReceiver"
             android:exported="true"
             android:permission="android.permission.BROADCAST_WAP_PUSH">
             <intent-filter>
@@ -64,7 +66,7 @@
 
         <!-- SMS role requirement: respond-via-message service -->
         <service
-            android:name=".spike.HeadlessSmsSendService"
+            android:name=".role.HeadlessSmsSendService"
             android:exported="true"
             android:permission="android.permission.SEND_RESPOND_VIA_MESSAGE">
             <intent-filter>
