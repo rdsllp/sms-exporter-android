@@ -30,18 +30,54 @@ object FileNames {
     private val ZIP_STAMP: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd_HHmm", Locale.ENGLISH)
 
     /**
-     * Keeps letters, digits, space and `+ - _ .` ('+' so phone-number titles survive); whitespace
-     * runs become one space, dot runs one dot, edges lose dots and spaces, capped at 60 chars.
+     * Keeps letters, digits, combining marks (Indic vowel signs), ZWJ/ZWNJ, emoji and variation
+     * selectors, space and `+ - _ .` ('+' so phone-number titles survive); whitespace runs become
+     * one space, dot runs one dot, edges lose dots and spaces. Capped at 60 code points without
+     * splitting a surrogate pair or a base character from the marks that follow it.
      */
     fun sanitize(title: String): String {
-        val kept = title
-            .map { if (it.isWhitespace()) ' ' else it }
-            .filter { it.isLetterOrDigit() || it in " +-_." }
-            .joinToString("")
+        val kept = StringBuilder()
+        title.codePoints().forEach { cp ->
+            when {
+                Character.isWhitespace(cp) -> kept.append(' ')
+                isKept(cp) -> kept.appendCodePoint(cp)
+            }
+        }
+        val collapsed = kept.toString()
             .replace(Regex(" {2,}"), " ")
             .replace(Regex("\\.{2,}"), ".")
-        val trimmed = kept.trimEdges().take(MAX_LENGTH).trimEdges()
+        val trimmed = capCodePoints(collapsed.trimEdges()).trimEdges()
         return trimmed.ifEmpty { FALLBACK }
+    }
+
+    private fun isKept(cp: Int): Boolean {
+        if (Character.isLetterOrDigit(cp) || isContinuation(cp)) return true
+        if (cp == ' '.code || cp == '+'.code || cp == '-'.code || cp == '_'.code || cp == '.'.code) return true
+        return when (Character.getType(cp)) {
+            Character.OTHER_SYMBOL.toInt() -> true
+            Character.MODIFIER_SYMBOL.toInt() -> Character.isSupplementaryCodePoint(cp)
+            else -> false
+        }
+    }
+
+    /** Code points that attach to the one before them: marks, ZWJ/ZWNJ, variation selector, skin tones. */
+    private fun isContinuation(cp: Int): Boolean {
+        if (cp == 0x200D || cp == 0x200C || cp == 0xFE0F) return true
+        return when (Character.getType(cp)) {
+            Character.NON_SPACING_MARK.toInt(),
+            Character.COMBINING_SPACING_MARK.toInt(),
+            Character.ENCLOSING_MARK.toInt() -> true
+            Character.MODIFIER_SYMBOL.toInt() -> Character.isSupplementaryCodePoint(cp)
+            else -> false
+        }
+    }
+
+    private fun capCodePoints(text: String): String {
+        val cps = text.codePoints().toArray()
+        if (cps.size <= MAX_LENGTH) return text
+        var cut = MAX_LENGTH
+        while (cut > 0 && (isContinuation(cps[cut]) || cps[cut - 1] == 0x200D)) cut--
+        return String(cps, 0, cut)
     }
 
     fun baseName(title: String, date: LocalDate): String = "${sanitize(title)}_$date"

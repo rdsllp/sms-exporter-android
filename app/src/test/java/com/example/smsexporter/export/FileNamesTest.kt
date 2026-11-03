@@ -18,10 +18,33 @@ class FileNamesTest {
         assertEquals("a.b", FileNames.sanitize("a.....b"))
         assertEquals("conversation", FileNames.sanitize(""))
         assertEquals("conversation", FileNames.sanitize("///"))
+        assertEquals("conversation", FileNames.sanitize("   "))
         assertEquals("a b", FileNames.sanitize("a \t  b"))
         assertEquals(60, FileNames.sanitize("x".repeat(100)).length)
         assertEquals(listOf("a", "a (2)", "a (3)"), FileNames.deduplicate(listOf("a", "a", "a")))
         assertEquals(listOf("Priya", "priya (2)"), FileNames.deduplicate(listOf("Priya", "priya")))
+    }
+
+    @Test
+    fun keepsCombiningMarksAndEmoji() {
+        assertEquals("বাংলা", FileNames.sanitize("বাংলা"))
+        assertEquals("মা", FileNames.sanitize("মা"))
+        val family = "\uD83D\uDC69\u200D\uD83D\uDC69\u200D\uD83D\uDC67 Family"
+        assertEquals(family, FileNames.sanitize(family))
+        assertEquals("\uD83D\uDE00", FileNames.sanitize("\uD83D\uDE00"))
+    }
+
+    @Test
+    fun capNeverSplitsAClusterOrSurrogatePair() {
+        val ascii = "x".repeat(59)
+        val bengali = FileNames.sanitize(ascii + "মা")
+        assertEquals(ascii, bengali)
+        val emoji = FileNames.sanitize(ascii + "\uD83D\uDE00\uD83D\uDE00")
+        assertEquals(60, emoji.codePointCount(0, emoji.length))
+        assertFalse(Character.isSurrogate(emoji.last()) && !Character.isLowSurrogate(emoji.last()))
+        val joined = FileNames.sanitize(ascii + "\uD83D\uDC69\u200D\uD83D\uDC69")
+        assertEquals(ascii, joined)
+        assertFalse(Character.isSurrogate(joined.last()))
     }
 
     @Test
