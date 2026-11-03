@@ -30,12 +30,12 @@
 **Files:**
 - Delete: `app/src/main/java/com/example/smsexporter/role/RoleComponents.kt`
 - Modify: `app/src/main/AndroidManifest.xml`
-- Test: existing unit suite only (`./gradlew :app:testDebugUnitTest --rerun`, expect 133 tests, 0 failures)
+- Test: existing unit suite only (`./gradlew :app:testDebugUnitTest --rerun`, expect 132 tests, 0 failures)
 
 **Interfaces:** none produced or consumed.
 
 - [ ] **Step 1: Confirm nothing else references the role code** — `grep -rn "role\.\|RoleManager\|SmsDeliverReceiver\|MmsDeliverReceiver\|HeadlessSmsSendService" app/src --include='*.kt' --include='*.xml'` must list only `RoleComponents.kt` and the manifest.
 - [ ] **Step 2: Delete `RoleComponents.kt`** and remove its now-empty package directory.
 - [ ] **Step 3: Edit the manifest** — remove the four `uses-permission` lines for `RECEIVE_SMS`, `RECEIVE_MMS`, `SEND_SMS`, `RECEIVE_WAP_PUSH`; remove the second `<intent-filter>` on `MainActivity` (`SEND`/`SENDTO` with the sms/smsto/mms/mmsto schemes); remove both `<receiver>` elements and the `<service>` element. Replace the header comment "Permissions + components needed to be eligible for the SMS role" with "Read-only access. No receiver or SENDTO filter: the app must never qualify for the SMS role." Keep `READ_SMS`, `READ_CONTACTS` and the `<queries>` block (update its comment to drop the words "every SMS app must have").
-- [ ] **Step 4: Verify** — `./gradlew :app:testDebugUnitTest --rerun` passes (133 tests); `./gradlew :app:installDebug` then `adb shell pm grant com.example.smsexporter android.permission.READ_SMS` and `… READ_CONTACTS`; `adb shell dumpsys package com.example.smsexporter | grep -c "SMS_DELIVER\|WAP_PUSH_DELIVER\|RESPOND_VIA_MESSAGE"` prints `0`; `adb shell cmd connectivity airplane-mode enable`, then `adb shell cmd role add-role-holder android.app.role.SMS com.example.smsexporter` prints an error and `adb shell cmd role get-role-holders android.app.role.SMS` still prints `com.google.android.apps.messaging`; `adb shell cmd connectivity airplane-mode disable`. Paste the outputs in the report.
+- [ ] **Step 4: Verify** — `./gradlew :app:testDebugUnitTest --rerun` passes (132 tests); `./gradlew :app:installDebug` then `adb shell pm grant com.example.smsexporter android.permission.READ_SMS` and `… READ_CONTACTS`; `adb shell dumpsys package com.example.smsexporter | grep -c "SMS_DELIVER\|WAP_PUSH_DELIVER\|RESPOND_VIA_MESSAGE"` prints `0`; `adb shell cmd connectivity airplane-mode enable`, then `adb shell cmd role add-role-holder android.app.role.SMS com.example.smsexporter` prints an error and `adb shell cmd role get-role-holders android.app.role.SMS` still prints `com.google.android.apps.messaging`; `adb shell cmd connectivity airplane-mode disable`. Paste the outputs in the report.
 - [ ] **Step 5: Commit** `chore(role): remove default-sms-app eligibility`
