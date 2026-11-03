@@ -29,7 +29,7 @@ class AttachmentExporterTest {
     fun missingAttachmentIsSkippedNotFatal() {
         val buf = ByteArrayOutputStream()
         val sink = ZipSink(buf)
-        assertNull(AttachmentExporter(repo(emptyMap())).copy(att, sink, "attachments/7.jpg"))
+        assertNull(AttachmentExporter(repo(emptyMap()), {}).copy(att, sink, "attachments/7.jpg"))
         sink.finish()
         val names = ZipInputStream(ByteArrayInputStream(buf.toByteArray())).use { z ->
             generateSequence { z.nextEntry }.map { it.name }.toList()
@@ -42,7 +42,7 @@ class AttachmentExporterTest {
         val data = byteArrayOf(1, 2, 3, 4, 5)
         val buf = ByteArrayOutputStream()
         val sink = ZipSink(buf)
-        assertEquals(5L, AttachmentExporter(repo(mapOf(7L to data))).copy(att, sink, "attachments/7.jpg"))
+        assertEquals(5L, AttachmentExporter(repo(mapOf(7L to data)), {}).copy(att, sink, "attachments/7.jpg"))
         sink.finish()
         ZipInputStream(ByteArrayInputStream(buf.toByteArray())).use { z ->
             assertEquals("attachments/7.jpg", z.nextEntry.name)
@@ -61,7 +61,7 @@ class AttachmentExporterTest {
             override fun close() {}
         }
         val r = repo(mapOf(7L to byteArrayOf(1, 2, 3)))
-        assertThrows(IOException::class.java) { AttachmentExporter(r).copy(att, failing, "x") }
+        assertThrows(IOException::class.java) { AttachmentExporter(r, {}).copy(att, failing, "x") }
     }
 
     @Test
@@ -78,6 +78,8 @@ class AttachmentExporterTest {
         }
         val r = MessageRepository(src, NameLookup { _, _ -> null })
         val sink = ZipSink(ByteArrayOutputStream())
-        assertNull(AttachmentExporter(r).copy(att, sink, "x"))
+        val logged = mutableListOf<String>()
+        assertNull(AttachmentExporter(r) { logged += it }.copy(att, sink, "x"))
+        assertEquals(1, logged.size)
     }
 }

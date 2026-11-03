@@ -7,7 +7,10 @@ import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
 
-class AttachmentExporter(private val repo: MessageRepository) {
+class AttachmentExporter(
+    private val repo: MessageRepository,
+    private val log: (String) -> Unit = { Log.w("Export", it) },
+) {
     /**
      * Returns bytes copied, or null when the provider cannot supply the bytes; an entry already
      * opened may be left truncated. Failures on the sink side (open or write) propagate.
@@ -16,16 +19,16 @@ class AttachmentExporter(private val repo: MessageRepository) {
         val raw = try {
             repo.openAttachment(a)
         } catch (e: IOException) {
-            Log.w(TAG, "attachment ${a.partId} unreadable", e)
+            log("attachment ${a.partId} unreadable: $e")
             null
         } catch (e: SecurityException) {
-            Log.w(TAG, "attachment ${a.partId} not permitted", e)
+            log("attachment ${a.partId} not permitted: $e")
             null
         } ?: return null
         return try {
             ReadErrors(raw).use { input -> sink.open(path, a.mimeType).use { out -> input.copyTo(out) } }
         } catch (e: AttachmentReadException) {
-            Log.w(TAG, "attachment ${a.partId} failed while reading", e)
+            log("attachment ${a.partId} failed while reading: $e")
             null
         }
     }
@@ -45,9 +48,5 @@ class AttachmentExporter(private val repo: MessageRepository) {
         override fun read(): Int = tag { super.read() }
         override fun read(b: ByteArray): Int = tag { super.read(b) }
         override fun read(b: ByteArray, off: Int, len: Int): Int = tag { super.read(b, off, len) }
-    }
-
-    private companion object {
-        const val TAG = "AttachmentExporter"
     }
 }

@@ -16,7 +16,6 @@ val gitSha: String = runCatching {
 }.getOrDefault("").ifEmpty { "unknown" }
 
 android {
-    testOptions { unitTests.isReturnDefaultValues = true } // android.util.Log is a no-op in JVM tests
     namespace = "com.example.smsexporter"
     compileSdk {
         version = release(37)
