@@ -97,8 +97,10 @@ import org.junit.runner.RunWith
                 ?.use { if (it.moveToFirst()) it.getString(0) else null }
             resolver.name(norm, raw) != direct
         }
-        Log.i("TelephonyMessageSourceTest", "numbers=${numbers.size} preloadVsPhoneLookupDiffs=$diffs")
+        val skipped = resolver.skippedCount.get()
+        Log.i("TelephonyMessageSourceTest", "numbers=${numbers.size} preloadVsPhoneLookupDiffs=$diffs skippedByGate=$skipped")
         assertTrue(numbers.size > 100)
         assertEquals(0, diffs)
+        assertTrue("suffix gate never skipped a lookup", skipped > 0)
     }
 }

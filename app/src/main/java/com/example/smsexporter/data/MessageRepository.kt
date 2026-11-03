@@ -10,8 +10,10 @@ import com.example.smsexporter.data.source.PageKey
 import com.example.smsexporter.data.source.RawMms
 import com.example.smsexporter.data.source.RawSms
 import com.example.smsexporter.data.source.RowFilter
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.InputStream
 
 /**
@@ -50,9 +52,13 @@ class MessageRepository(
         val threads = source.threads()
         val canonical = source.canonicalAddresses()
         val t1 = System.nanoTime()
-        names.preload()
-        val t2 = System.nanoTime()
-        val built = ConversationIndex.build(threads, canonical, names)
+        var t2 = 0L
+        // contact queries block, so they run on IO whatever the caller's dispatcher
+        val built = withContext(Dispatchers.IO) {
+            names.preload()
+            t2 = System.nanoTime()
+            ConversationIndex.build(threads, canonical, names)
+        }
         val t3 = System.nanoTime()
         log("threads+canonical ${ms(t0, t1)} ms, preload ${ms(t1, t2)} ms, build ${ms(t2, t3)} ms (${built.size} conversations)")
         return built
