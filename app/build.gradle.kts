@@ -4,12 +4,13 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-// Short commit of HEAD for the device check report; "unknown" when git is unavailable. Uses
+// Short commit of HEAD for the device check report, with "-dirty" when tracked files have
+// uncommitted changes; "unknown" when git is unavailable. Uses
 // providers.exec (configuration-cache safe): Gradle re-runs it to check a cached configuration, so a
 // new commit invalidates the cache and BuildConfig.GIT_SHA follows HEAD.
 val gitSha: String = runCatching {
     providers.exec {
-        commandLine("git", "rev-parse", "--short", "HEAD")
+        commandLine("git", "describe", "--always", "--dirty")
         isIgnoreExitValue = true
     }.standardOutput.asText.get().trim()
 }.getOrDefault("").ifEmpty { "unknown" }

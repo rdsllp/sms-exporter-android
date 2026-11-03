@@ -95,4 +95,20 @@ class DeviceCheckTest {
         assertEquals("image part read: ERROR IllegalStateException: cannot open part ###", lines[5])
         assertEquals("rows: sms=2 mms=3 rcs=1 threads=2 conversations=2", lines[2])
     }
+
+    @Test fun anonymousAndStrayCancellationExceptionsBecomeErrorLines() = runTest {
+        val anonymous = object : MessageSource by fake {
+            override fun openPart(partId: Long): InputStream? = throw object : RuntimeException("no") {}
+        }
+        val line = check(anonymous).run().text.lines()[5]
+        assertTrue(line, line.startsWith("image part read: ERROR DeviceCheckTest$") && line.endsWith(": no"))
+
+        // a CancellationException from a library while the run is still active is not a cancellation of the run
+        val stray = object : MessageSource by fake {
+            override fun openPart(partId: Long): InputStream? = throw kotlinx.coroutines.CancellationException("stray")
+        }
+        val lines = check(stray).run().text.lines()
+        assertLabelsInOrder(lines)
+        assertEquals("image part read: ERROR CancellationException: stray", lines[5])
+    }
 }

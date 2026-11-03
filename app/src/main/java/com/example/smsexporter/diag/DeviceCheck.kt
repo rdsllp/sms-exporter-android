@@ -14,6 +14,8 @@ import com.example.smsexporter.data.source.RawMms
 import com.example.smsexporter.data.source.RowFilter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 import java.io.InputStream
@@ -51,7 +53,7 @@ fun bitmapBounds(input: InputStream): Pair<Int, Int>? {
  * Builds a shareable report of counts, timings and masked metadata: never message bodies, contact
  * names or full numbers. One private function per line; each runs on its own, so a failing line is
  * written as "<label>: ERROR <Exception>: <message>" (digit runs over 6 masked) and the rest still
- * appear. [run] never throws, except to propagate cancellation.
+ * appear. [run] never throws, except to propagate a cancellation of itself.
  */
 class DeviceCheck(
     private val env: DeviceEnv,
@@ -71,10 +73,10 @@ class DeviceCheck(
             onProgress("$label…")
             return try {
                 "$label$sep${body()}"
-            } catch (e: CancellationException) {
-                throw e
             } catch (e: Throwable) {
-                "$label: ERROR ${e.javaClass.simpleName}: ${mask(e.message)}"
+                // rethrow only a real cancellation of this run; a library's stray one is an error line
+                if (e is CancellationException) currentCoroutineContext().ensureActive()
+                "$label: ERROR ${className(e)}: ${mask(e.message)}"
             }
         }
         val lines = listOf(
@@ -161,6 +163,9 @@ class DeviceCheck(
         val LONG_DIGITS = Regex("""\d{7,}""")
 
         fun ms(from: Long, to: Long) = (to - from) / 1_000_000
+
+        /** The simple class name, or the last part of the binary name for an anonymous class (whose simple name is empty). */
+        fun className(e: Throwable) = e.javaClass.simpleName.ifEmpty { e.javaClass.name.substringAfterLast('.') }
 
         /** Hides digit runs longer than 6 so an exception message cannot leak a phone number. */
         fun mask(message: String?) = message?.replace(LONG_DIGITS, "###") ?: ""

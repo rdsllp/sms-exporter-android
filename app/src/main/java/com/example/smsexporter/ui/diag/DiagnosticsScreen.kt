@@ -1,9 +1,12 @@
 package com.example.smsexporter.ui.diag
 
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -29,13 +32,16 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
@@ -89,6 +95,19 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val report = state.report
+    val currentReport by rememberUpdatedState(report)
+
+    // The chooser calls this back only when the user actually picks a target (not on cancel); only
+    // then has the report been shared, so only then may the crash log go.
+    DisposableEffect(context) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context, intent: Intent) {
+                currentReport?.let { clearCrashLogIfIncluded(c, it) }
+            }
+        }
+        ContextCompat.registerReceiver(context, receiver, IntentFilter(ACTION_SHARE_CHOSEN), ContextCompat.RECEIVER_NOT_EXPORTED)
+        onDispose { context.unregisterReceiver(receiver) }
+    }
 
     Scaffold(
         topBar = {
@@ -119,8 +138,12 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                     onClick = {
                         report ?: return@Button
                         val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, report) }
-                        runCatching { context.startActivity(Intent.createChooser(send, "Share device check")) }
-                            .onSuccess { clearCrashLogIfIncluded(context, report) }
+                        // package-scoped and immutable: only our own non-exported receiver gets it
+                        val chosen = PendingIntent.getBroadcast(
+                            context, 0, Intent(ACTION_SHARE_CHOSEN).setPackage(context.packageName),
+                            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                        )
+                        runCatching { context.startActivity(Intent.createChooser(send, "Share device check", chosen.intentSender)) }
                             .onFailure { scope.launch { snackbar.showSnackbar("Could not share") } }
                     },
                     enabled = report != null,
@@ -143,8 +166,12 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
     }
 }
 
-/** Clears the crash log only once it has gone out in a copied or shared report (a newer crash is kept). */
+private const val ACTION_SHARE_CHOSEN = "com.example.smsexporter.action.DEVICE_CHECK_SHARE_CHOSEN"
+
+/** Clears the crash log only once it has gone out in a copied or shared report (a newer crash is kept). Never throws. */
 private fun clearCrashLogIfIncluded(context: Context, report: String) {
-    val crash = CrashLog.read(context) ?: return
-    if (report.contains(crash)) CrashLog.clear(context)
+    runCatching {
+        val crash = CrashLog.read(context) ?: return
+        if (report.contains(crash)) CrashLog.clear(context)
+    }
 }
