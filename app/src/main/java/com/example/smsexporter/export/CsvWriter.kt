@@ -69,7 +69,7 @@ object CsvWriter {
     private fun guardJoined(items: List<String>): String {
         val joined = items.joinToString(";")
         val first = items.firstOrNull() ?: return joined
-        return if (joined[0] in FORMULA_START && !PHONE_LIKE.matches(first)) "'$joined" else joined
+        return if (joined.isNotEmpty() && joined[0] in FORMULA_START && !PHONE_LIKE.matches(first)) "'$joined" else joined
     }
 
     /** Quotes an already-guarded cell if it needs it. */

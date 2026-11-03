@@ -112,4 +112,10 @@ class CsvWriterTest {
         val out = csv(emptyList(), MessageFilter(query = "a\nb"))
         assertEquals(2, out.trimEnd().split("\r\n").size)
     }
+
+    @Test
+    fun emptyJoinedElementDoesNotCrash() {
+        val out = csv(listOf(msg(1)), names = { listOf("") })
+        assertTrue(out, out.split("\r\n")[2].endsWith(",hi,,"))
+    }
 }
