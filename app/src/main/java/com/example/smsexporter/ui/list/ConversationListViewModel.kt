@@ -49,7 +49,7 @@ data class ListUiState(
 class ConversationListViewModel(
     private val repo: MessageRepository,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
-    private val log: (String) -> Unit = { Log.i("ListVm", it) },
+    private val log: (String) -> Unit = { Log.i("Perf", it) },
     private val onFilterChanged: (MessageFilter) -> Unit = {},
     private val onOrderChanged: (List<String>) -> Unit = {},
 ) : ViewModel() {

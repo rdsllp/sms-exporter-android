@@ -63,7 +63,7 @@ class ConversationViewModelTest {
             RawAddr(2001, addr, 151), RawAddr(2002, addr, 137), RawAddr(2003, addr, 151), RawAddr(2004, addr, 137),
         ),
     )
-    private val repo = MessageRepository(source, NameLookup { _, _ -> null })
+    private val repo = MessageRepository(source, NameLookup { _, _ -> null }, log = {})
     private val okay = MessageId(Source.SMS_TABLE, 1001)
 
     @Before fun setUp() = Dispatchers.setMain(dispatcher)

@@ -62,7 +62,7 @@ class ConversationListViewModelTest {
     @After fun tearDown() = Dispatchers.resetMain()
 
     private fun TestScope.loadedVm(): ConversationListViewModel {
-        val vm = ConversationListViewModel(MessageRepository(source, names), dispatcher, log = {})
+        val vm = ConversationListViewModel(MessageRepository(source, names, log = {}), dispatcher, log = {})
         advanceUntilIdle()
         return vm
     }
@@ -109,7 +109,7 @@ class ConversationListViewModelTest {
 
     @Test fun reportsVisibleOrderAfterSort() = runTest(dispatcher) {
         var order = emptyList<String>()
-        val vm = ConversationListViewModel(MessageRepository(source, names), dispatcher, log = {}, onOrderChanged = { order = it })
+        val vm = ConversationListViewModel(MessageRepository(source, names, log = {}), dispatcher, log = {}, onOrderChanged = { order = it })
         vm.setSort(SortOrder.NAME_ASC)
         advanceUntilIdle()
         assertEquals(vm.state.value.conversations.map { it.key }, order)
@@ -118,7 +118,7 @@ class ConversationListViewModelTest {
     }
 
     @Test fun secondRefreshWinsOverStaleKindFill() = runTest(dispatcher) {
-        val repo = MessageRepository(source, names)
+        val repo = MessageRepository(source, names, log = {})
         val vm = ConversationListViewModel(repo, dispatcher, log = {})
         vm.refresh()
         vm.refresh()                            // cancels the earlier ones before they publish

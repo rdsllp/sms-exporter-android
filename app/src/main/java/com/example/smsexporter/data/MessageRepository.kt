@@ -1,5 +1,6 @@
 package com.example.smsexporter.data
 
+import android.util.Log
 import com.example.smsexporter.data.model.Attachment
 import com.example.smsexporter.data.model.Conversation
 import com.example.smsexporter.data.model.Message
@@ -23,8 +24,15 @@ data class PageCursor(val timestampMs: Long, val source: Source, val rowId: Long
     }
 }
 
-/** Reads conversations and messages from a [MessageSource], merging the sms and mms tables. */
-class MessageRepository(private val source: MessageSource, private val names: NameLookup) {
+/**
+ * Reads conversations and messages from a [MessageSource], merging the sms and mms tables.
+ * [log] receives load-phase timings (replaced in unit tests, where android.util.Log is unavailable).
+ */
+class MessageRepository(
+    private val source: MessageSource,
+    private val names: NameLookup,
+    private val log: (String) -> Unit = { Log.i("Perf", it) },
+) {
     private val mapper = MessageMapper(source)
     private val cacheLock = Mutex()
     @Volatile private var cache: List<Conversation>? = null
@@ -34,8 +42,20 @@ class MessageRepository(private val source: MessageSource, private val names: Na
      * until [refresh]. Call [fillLastKinds] afterwards to set `lastKind`.
      */
     suspend fun conversations(refresh: Boolean = false): List<Conversation> = cacheLock.withLock {
-        cache?.takeIf { !refresh } ?: ConversationIndex.build(source.threads(), source.canonicalAddresses(), names)
-            .also { cache = it }
+        cache?.takeIf { !refresh } ?: load().also { cache = it }
+    }
+
+    private suspend fun load(): List<Conversation> {
+        val t0 = System.nanoTime()
+        val threads = source.threads()
+        val canonical = source.canonicalAddresses()
+        val t1 = System.nanoTime()
+        names.preload()
+        val t2 = System.nanoTime()
+        val built = ConversationIndex.build(threads, canonical, names)
+        val t3 = System.nanoTime()
+        log("threads+canonical ${ms(t0, t1)} ms, preload ${ms(t1, t2)} ms, build ${ms(t2, t3)} ms (${built.size} conversations)")
+        return built
     }
 
     suspend fun conversation(key: String): Conversation? = conversations().firstOrNull { it.key == key }
@@ -46,10 +66,12 @@ class MessageRepository(private val source: MessageSource, private val names: Na
      */
     suspend fun fillLastKinds(): List<Conversation> {
         val conversations = conversations()
+        val t0 = System.nanoTime()
         val newest = source.newestPerThread()
         val filled = conversations.map { c ->
             c.copy(lastKind = c.threadIds.mapNotNull { newest[it] }.maxByOrNull { it.dateMs }?.kind)
         }
+        log("fillLastKinds ${ms(t0, System.nanoTime())} ms")
         // skip the store if a refresh replaced the cache meanwhile
         cacheLock.withLock { if (cache === conversations) cache = filled }
         return filled
@@ -129,6 +151,8 @@ class MessageRepository(private val source: MessageSource, private val names: Na
 
     private companion object {
         const val ALL_STEP = 500
+
+        fun ms(fromNs: Long, toNs: Long) = (toNs - fromNs) / 1_000_000
 
         /** mms sorts before sms at equal timestamp. */
         fun tableRank(s: Source) = if (s == Source.MMS_TABLE) 0 else 1

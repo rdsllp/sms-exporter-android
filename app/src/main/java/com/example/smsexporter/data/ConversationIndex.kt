@@ -6,6 +6,9 @@ import com.example.smsexporter.data.source.RawThread
 
 fun interface NameLookup {
     fun name(normalized: String, raw: String): String?
+
+    /** Optional bulk warm-up before many [name] calls. */
+    fun preload() {}
 }
 
 object ConversationIndex {

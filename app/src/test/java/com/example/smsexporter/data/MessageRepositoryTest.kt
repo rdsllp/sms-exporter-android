@@ -27,7 +27,7 @@ class MessageRepositoryTest {
             parts = listOf(RawPart(10, 2, "text/plain", null, "Hiiiii", null), RawPart(11, 3, "image/jpeg", "a.jpg", null, "/x/a.jpg")),
             addrs = listOf(RawAddr(2, "+918617482941", 151), RawAddr(3, "+918617482941", 137)),
         )
-        val repo = MessageRepository(fake, noNames)
+        val repo = MessageRepository(fake, noNames, log = {})
         val conv = repo.conversations().single()
         val page = repo.page(conv, MessageFilter(), null)
         assertEquals(listOf("mms:2", "mms:3", "sms:1"), page.map { it.id.toString() })
@@ -40,7 +40,7 @@ class MessageRepositoryTest {
             sms = listOf(RawSms(1, 5, "+911111111111", 1, 1000, "Hello, \"you\"\nthere"), RawSms(2, 5, "+911111111111", 2, 2000, "হ্যালো")),
             mms = emptyList(), parts = emptyList(), addrs = emptyList(),
         )
-        val repo = MessageRepository(fake, noNames)
+        val repo = MessageRepository(fake, noNames, log = {})
         val conv = repo.conversations().single()
         assertEquals(listOf("sms:1"), repo.page(conv, MessageFilter(query = "hello,"), null).map { it.id.toString() })
         assertEquals(listOf("sms:2"), repo.page(conv, MessageFilter(query = "হ্যা"), null).map { it.id.toString() })
@@ -56,7 +56,7 @@ class MessageRepositoryTest {
                 RawPart(50, 1, "image/png", "p.png", null, "/x/p.png"),
             addrs = (1L..6L).map { RawAddr(it, "+912222222222", 137) },
         )
-        val repo = MessageRepository(fake, noNames)
+        val repo = MessageRepository(fake, noNames, log = {})
         val conv = repo.conversations().single()
         val page = repo.page(conv, MessageFilter(hasAttachment = true), null, limit = 1)
         assertEquals(listOf("mms:1"), page.map { it.id.toString() })
@@ -71,7 +71,7 @@ class MessageRepositoryTest {
             parts = (1L..3L).map { RawPart(20 + it, it, "text/plain", null, "m$it", null) },
             addrs = (1L..3L).map { RawAddr(it, "+913333333333", 137) },
         )
-        val repo = MessageRepository(fake, noNames)
+        val repo = MessageRepository(fake, noNames, log = {})
         val conv = repo.conversations().single()
         val first = repo.page(conv, MessageFilter(), null, limit = 2)
         val second = repo.page(conv, MessageFilter(), PageCursor.of(first.last()), limit = 2)
@@ -94,7 +94,7 @@ class MessageRepositoryTest {
             ),
             canonical = mapOf(1L to "+914444444444", 2L to "+915555555555"),
         )
-        val repo = MessageRepository(fake, noNames)
+        val repo = MessageRepository(fake, noNames, log = {})
         assertTrue(repo.conversations().all { it.lastKind == null })
         val filled = repo.fillLastKinds()
         assertEquals(2, filled.size)
@@ -112,7 +112,7 @@ class MessageRepositoryTest {
             parts = emptyList(),
             addrs = (1L..2L).map { RawAddr(it, "+916666666666", 137) },
         )
-        val repo = MessageRepository(fake, noNames)
+        val repo = MessageRepository(fake, noNames, log = {})
         val conv = repo.conversations().single()
         val seen = mutableListOf<String>()
         var cursor: PageCursor? = null
@@ -135,7 +135,7 @@ class MessageRepositoryTest {
             parts = listOf(RawPart(30, 3, "text/plain", null, "photo later", null)),
             addrs = listOf(RawAddr(3, "+917777777777", 137)),
         )
-        val repo = MessageRepository(fake, noNames)
+        val repo = MessageRepository(fake, noNames, log = {})
         val keys = repo.conversations().associate { it.threadIds.single() to it.key }
         assertEquals(setOf(keys.getValue(20)), repo.conversationKeysWithText("otp"))
         assertEquals(setOf(keys.getValue(21)), repo.conversationKeysWithText("PHOTO"))

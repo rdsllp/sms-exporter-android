@@ -5,7 +5,9 @@ import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
+import android.provider.ContactsContract
 import com.example.smsexporter.data.ContactResolver
+import com.example.smsexporter.data.ConversationIndex
 import com.example.smsexporter.data.MessageFilter
 import com.example.smsexporter.data.MessageRepository
 import com.example.smsexporter.data.NameLookup
@@ -82,5 +84,21 @@ import org.junit.runner.RunWith
         val elapsedNs = System.nanoTime() - t0
         Log.i("TelephonyMessageSourceTest", "contactNameLength=${name!!.length} cachedCallNs=$elapsedNs")
         assertTrue("cached call took ${elapsedNs}ns", elapsedNs < 1_000_000)
+    }
+    /** The preload and its suffix gate must give the same name as one PhoneLookup per number. */
+    @Test fun contactResolverPreloadAgreesWithPhoneLookup() = runBlocking {
+        val cr = InstrumentationRegistry.getInstrumentation().targetContext.contentResolver
+        val numbers = LinkedHashMap<String, String>()
+        ConversationIndex.build(src.threads(), src.canonicalAddresses(), NameLookup { n, r -> if (n.startsWith("num:")) numbers.putIfAbsent(n, r); null })
+        val resolver = ContactResolver(cr).also { it.preload() }
+        val diffs = numbers.count { (norm, raw) ->
+            val uri = ContactsContract.PhoneLookup.CONTENT_FILTER_URI.buildUpon().appendPath(raw).build()
+            val direct = cr.query(uri, arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME), null, null, null)
+                ?.use { if (it.moveToFirst()) it.getString(0) else null }
+            resolver.name(norm, raw) != direct
+        }
+        Log.i("TelephonyMessageSourceTest", "numbers=${numbers.size} preloadVsPhoneLookupDiffs=$diffs")
+        assertTrue(numbers.size > 100)
+        assertEquals(0, diffs)
     }
 }
