@@ -9,6 +9,7 @@ import com.example.smsexporter.data.source.RawMms
 import com.example.smsexporter.data.source.RawPart
 import com.example.smsexporter.data.source.RawSms
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.IOException
 import java.io.OutputStream
 import java.time.ZoneOffset
@@ -26,10 +27,13 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ExportCoordinatorTest {
+    @get:Rule val tmp = TemporaryFolder()
     private val now = ZonedDateTime.of(2026, 11, 2, 10, 15, 0, 0, ZoneOffset.ofHoursMinutes(5, 30))
     private val related = "application/vnd.wap.multipart.related"
     private val imageBytes = byteArrayOf(9, 8, 7, 6)
@@ -86,7 +90,7 @@ class ExportCoordinatorTest {
         repo: MessageRepository = repo(),
         sink: FakeSink = FakeSink(),
         dispatcher: CoroutineDispatcher = UnconfinedTestDispatcher(testScheduler),
-        pdf: suspend (String, OutputStream) -> Unit = { html, out -> out.write("%PDF-fake $html".toByteArray()) },
+        pdf: suspend (File, OutputStream) -> Unit = { html, out -> out.write("%PDF-fake ${html.readText()}".toByteArray()) },
     ): Harness {
         val zipNames = mutableListOf<String?>()
         val c = ExportCoordinator(
@@ -95,6 +99,7 @@ class ExportCoordinatorTest {
             pdf = pdf,
             sinkFactory = { name -> zipNames += name; sink },
             clock = { now },
+            cacheDir = tmp.root,
             scale = { "data:image/jpeg;base64,AAA" },
             attachments = AttachmentExporter(repo, {}),
             dispatcher = dispatcher,
@@ -121,6 +126,7 @@ class ExportCoordinatorTest {
         assertTrue(h.sink.text("$folderA.pdf").contains("data:image/jpeg;base64,AAA"))
         assertEquals(ExportProgress.Done("mem://x", "mem/x", "application/pdf"), events.last())
         assertTrue(h.sink.finished)
+        assertEquals("temp html deleted", emptyList<String>(), tmp.root.list()!!.toList())
     }
 
     @Test
@@ -225,6 +231,30 @@ class ExportCoordinatorTest {
         assertFalse(h.sink.finished)
         assertEquals(ExportProgress.Failed("printer jammed"), events.last())
         assertTrue(events.none { it is ExportProgress.Done })
+        assertEquals("temp html deleted", emptyList<String>(), tmp.root.list()!!.toList())
+    }
+
+    @Test
+    fun zipIsolatesPerConversationFailure() = runTest {
+        val r = repo()
+        var calls = 0
+        val h = harness(r, pdf = { html, out ->
+            if (++calls == 2) throw IOException("printer jammed")
+            out.write("%PDF-fake ${html.readText()}".toByteArray())
+        })
+        val keyA = keyOf(r, a)
+        val events = h.coordinator.run(request(listOf(keyA, keyOf(r, b), keyA), ExportFormat.PDF)).toList()
+        val folderA2 = "$folderA (2)"
+        val paths = h.sink.files.keys
+        assertTrue(paths.toString(), h.sink.text("$folderA/$folderA.pdf").startsWith("%PDF-fake <!doctype html>"))
+        assertTrue(paths.toString(), h.sink.text("$folderA2/$folderA2.pdf").startsWith("%PDF-fake <!doctype html>"))
+        val note = h.sink.text("$folderB/EXPORT_FAILED.txt")
+        assertTrue(note, note.contains(b) && note.contains("printer jammed"))
+        assertEquals("text/plain", h.sink.mimes.getValue("$folderB/EXPORT_FAILED.txt"))
+        assertTrue(h.sink.finished)
+        assertFalse(h.sink.aborted)
+        assertEquals(ExportProgress.Done("mem://x", "mem/x", "application/zip", failed = 1), events.last())
+        assertEquals("temp html deleted", emptyList<String>(), tmp.root.list()!!.toList())
     }
 
     @Test

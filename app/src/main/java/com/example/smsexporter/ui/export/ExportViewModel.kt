@@ -26,7 +26,8 @@ sealed interface ExportUiState {
 
     data class Running(val progress: ExportProgress.Running) : ExportUiState
 
-    data class Done(val uri: String, val displayPath: String, val mime: String) : ExportUiState
+    /** [failed] conversations of a zip could not be exported (see EXPORT_FAILED.txt in their folders). */
+    data class Done(val uri: String, val displayPath: String, val mime: String, val failed: Int = 0) : ExportUiState
 
     data class Failed(val message: String) : ExportUiState
 
@@ -67,7 +68,7 @@ class ExportViewModel(private val run: (ExportRequest) -> Flow<ExportProgress>) 
                     currentCoroutineContext().ensureActive()
                     _state.value = when (p) {
                         is ExportProgress.Running -> ExportUiState.Running(p)
-                        is ExportProgress.Done -> ExportUiState.Done(p.uri, p.displayPath, p.mime)
+                        is ExportProgress.Done -> ExportUiState.Done(p.uri, p.displayPath, p.mime, p.failed)
                         is ExportProgress.Failed -> ExportUiState.Failed(p.message)
                         ExportProgress.Cancelled -> ExportUiState.Cancelled
                     }

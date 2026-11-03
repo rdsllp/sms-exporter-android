@@ -119,4 +119,14 @@ class ExportViewModelTest {
         advanceUntilIdle()
         assertEquals(ExportUiState.Failed("boom"), vm.state.value)
     }
+
+    @Test
+    fun doneCarriesFailedCount() = runTest(dispatcher) {
+        val done = ExportProgress.Done("content://x/1", "Download/SmsExporter/a.zip", "application/zip", failed = 2)
+        val vm = ExportViewModel { flow<ExportProgress> { emit(done) } }
+        vm.open(listOf("k1", "k2", "k3"), filter, "3 conversations")
+        vm.start(ExportFormat.PDF)
+        advanceUntilIdle()
+        assertEquals(ExportUiState.Done(done.uri, done.displayPath, done.mime, failed = 2), vm.state.value)
+    }
 }

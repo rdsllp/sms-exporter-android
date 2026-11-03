@@ -31,9 +31,10 @@ class SmsExporterApp : Application(), ImageLoaderFactory {
         ExportCoordinator(
             repository,
             HtmlRenderer(assets.open("export/chat.css").bufferedReader().use { it.readText() }),
-            pdf = PdfPrinter(this)::print,
+            pdf = PdfPrinter(this)::print, // the File overload (the expected type picks it)
             sinkFactory = { name -> if (name == null) DownloadsSink(contentResolver) else ZipSink(contentResolver, name) },
             clock = { ZonedDateTime.now() },
+            cacheDir = cacheDir,
         )
     }
 

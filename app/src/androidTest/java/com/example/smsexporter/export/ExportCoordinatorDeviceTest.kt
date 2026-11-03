@@ -41,6 +41,7 @@ class ExportCoordinatorDeviceTest {
             repo = repo,
             html = HtmlRenderer(""),
             pdf = { _, _ -> awaitCancellation() },
+            cacheDir = InstrumentationRegistry.getInstrumentation().targetContext.cacheDir,
             sinkFactory = { name ->
                 val zip = checkNotNull(name) { "two conversations must go to a zip" }
                 zipNames += zip

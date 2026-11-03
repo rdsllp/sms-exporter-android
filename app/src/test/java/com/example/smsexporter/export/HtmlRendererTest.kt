@@ -154,4 +154,13 @@ class HtmlRendererTest {
         assertFalse(html.contains("<span class=\"chip\"></span>"))
         assertTrue(html.contains("<span class=\"chip\">Go</span>"))
     }
+
+    @Test
+    fun botCardImageRenderedOnce() {
+        val photo = Attachment(7, "image/jpeg", "card.jpg", 10)
+        val m = msg(1, attachments = listOf(photo)).copy(botCard = BotCard("Offer", null, 7, emptyList()))
+        val html = render(listOf(m), image = { "data:image/jpeg;base64,AAA" })
+        assertEquals(html, 1, Regex("<img").findAll(html).count())
+        assertTrue(html.contains("<div class=\"card\"><img"))
+    }
 }

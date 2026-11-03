@@ -80,6 +80,14 @@ private fun Done(state: ExportUiState.Done, onClose: () -> Unit) {
     val context = LocalContext.current
     Text("Export complete", style = MaterialTheme.typography.titleLarge)
     Text("Saved to ${state.displayPath}", style = MaterialTheme.typography.bodyMedium)
+    if (state.failed > 0) {
+        val n = if (state.failed == 1) "1 conversation" else "${state.failed} conversations"
+        Text(
+            "$n could not be exported — see EXPORT_FAILED.txt",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         OutlinedButton(onClick = onClose, modifier = Modifier.weight(1f)) { Text("Close") }
         Button(

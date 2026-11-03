@@ -7,6 +7,7 @@ import com.example.smsexporter.data.model.Attachment
 import com.example.smsexporter.data.model.Conversation
 import com.example.smsexporter.data.model.Message
 import com.example.smsexporter.data.model.MessageId
+import java.io.File
 import java.io.OutputStream
 import java.io.OutputStreamWriter
 import java.time.ZonedDateTime
@@ -26,21 +27,32 @@ import kotlinx.coroutines.flow.flowOn
  * (`sinkFactory(zipName)`) with one folder per conversation holding `<folder>.<ext>` and
  * `attachments/`.
  *
+ * In a multi-conversation zip, a conversation that fails (any [Exception] but cancellation) is
+ * replaced by `<folder>/EXPORT_FAILED.txt` and the export goes on; [ExportProgress.Done.failed]
+ * counts them. A single-conversation export fails as a whole.
+ *
  * [run] is cold. It emits [ExportProgress.Running] before each conversation and again once its
  * messages are loaded, then [ExportProgress.Done] after the sink is published, or
  * [ExportProgress.Failed] after the sink is aborted. It never emits [ExportProgress.Cancelled]:
  * a cancelled flow cannot emit, so on cancellation it aborts the sink and rethrows, and the
  * collector (the ViewModel) maps job cancellation to `Cancelled`.
  *
+ * PDF/HTML pages are streamed, never held whole in memory: HTML straight into the sink entry,
+ * PDF into a temp `export-<random>.html` in [cacheDir] that [pdf] loads and that is deleted
+ * afterwards on every path.
+ *
  * Runs on [dispatcher]; [pdf] does its own main-thread hops.
  */
 class ExportCoordinator(
     private val repo: MessageRepository,
     private val html: HtmlRenderer,
-    private val pdf: suspend (String, OutputStream) -> Unit,
+    /** Prints the HTML file to PDF into the stream. */
+    private val pdf: suspend (File, OutputStream) -> Unit,
     /** null → a single-file sink (DownloadsSink); non-null → a ZipSink with that file name. */
     private val sinkFactory: (zipName: String?) -> ExportSink,
     private val clock: () -> ZonedDateTime,
+    /** Where the PDF path writes its temporary HTML file. */
+    private val cacheDir: File,
     private val scale: (ByteArray) -> String? = ImageScaler::toDataUri,
     private val attachments: AttachmentExporter = AttachmentExporter(repo),
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -74,17 +86,28 @@ class ExportCoordinator(
             emitting = false
         }
 
+        fun openSink(zip: Boolean): ExportSink = sink ?: run {
+            zipped = zip
+            sinkFactory(if (zip) FileNames.zipName(now.toLocalDateTime()) else null).also { sink = it }
+        }
+        var failed = 0
+
         val result = try {
             for ((i, c) in conversations.withIndex()) {
                 report(ExportProgress.Running(i, total, c.title, i.toFloat() / total))
-                val messages = repo.all(c, request.filter).reversed()
-                report(ExportProgress.Running(i, total, c.title, (i + 0.5f) / total))
-                val s = sink ?: run {
-                    zipped = total > 1 || (format.copiesAttachments && messages.any { it.attachments.isNotEmpty() })
-                    sinkFactory(if (zipped) FileNames.zipName(now.toLocalDateTime()) else null).also { sink = it }
+                try {
+                    val messages = repo.all(c, request.filter).reversed()
+                    report(ExportProgress.Running(i, total, c.title, (i + 0.5f) / total))
+                    val s = openSink(total > 1 || (format.copiesAttachments && messages.any { it.attachments.isNotEmpty() }))
+                    val prefix = if (zipped) "${folders[i]}/" else ""
+                    writeConversation(s, prefix, folders[i], format, c, messages, request.filter, now)
+                } catch (e: Exception) {
+                    // one bad conversation of several must not lose the others: note it and go on
+                    if (e is CancellationException || emitting || total == 1) throw e
+                    log("export of conversation ${i + 1} of $total failed: $e")
+                    writeFailureNote(openSink(true), folders[i], c, e)
+                    failed++
                 }
-                val prefix = if (zipped) "${folders[i]}/" else ""
-                writeConversation(s, prefix, folders[i], format, c, messages, request.filter, now)
             }
             checkNotNull(sink).finish()
         } catch (e: Throwable) {
@@ -94,7 +117,16 @@ class ExportCoordinator(
             emit(ExportProgress.Failed(e.message ?: e::class.simpleName ?: "Export failed"))
             return
         }
-        emit(ExportProgress.Done(result.uri, result.displayPath, if (zipped) ZIP_MIME else format.mime))
+        emit(ExportProgress.Done(result.uri, result.displayPath, if (zipped) ZIP_MIME else format.mime, failed))
+    }
+
+    /** Puts `<folder>/EXPORT_FAILED.txt` in place of a conversation that could not be exported. */
+    private fun writeFailureNote(sink: ExportSink, folder: String, c: Conversation, e: Exception) {
+        val text = "This conversation could not be exported.\n\n" +
+            "Conversation: ${c.title}\n" +
+            "Error: ${e.message ?: e::class.simpleName}\n\n" +
+            "Any other file in this folder may be incomplete.\n"
+        sink.open("$folder/$FAILED_NOTE", "text/plain").use { it.write(text.toByteArray(Charsets.UTF_8)) }
     }
 
     /** Writes one conversation; [prefix] is its folder plus "/" in a zip, else "". */
@@ -110,10 +142,18 @@ class ExportCoordinator(
     ) {
         val mainPath = "$prefix$baseName.${format.ext}"
         when (format) {
-            ExportFormat.PDF, ExportFormat.HTML -> {
-                val page = html.render(c, messages, filter, now, ::inlineImage)
-                sink.open(mainPath, format.mime).use { out ->
-                    if (format == ExportFormat.PDF) pdf(page, out) else out.write(page.toByteArray(Charsets.UTF_8))
+            ExportFormat.HTML -> sink.open(mainPath, format.mime).use { out ->
+                OutputStreamWriter(out, Charsets.UTF_8).buffered().use { w ->
+                    html.render(w, c, messages, filter, now, ::inlineImage)
+                }
+            }
+            ExportFormat.PDF -> {
+                val page = File.createTempFile("export-", ".html", cacheDir)
+                try {
+                    page.bufferedWriter(Charsets.UTF_8).use { w -> html.render(w, c, messages, filter, now, ::inlineImage) }
+                    sink.open(mainPath, format.mime).use { out -> pdf(page, out) }
+                } finally {
+                    page.delete()
                 }
             }
             ExportFormat.CSV, ExportFormat.JSON -> {
@@ -144,13 +184,20 @@ class ExportCoordinator(
             }
         }
 
+    /** Only an [Exception] means "photo missing"; an OutOfMemoryError must fail the export loudly. */
     private fun inlineImage(a: Attachment): String? =
-        runCatching { repo.openAttachment(a)?.use { it.readBytes() }?.let(scale) }.getOrNull()
+        try {
+            repo.openAttachment(a)?.use { it.readBytes() }?.let(scale)
+        } catch (e: Exception) {
+            log("inline image ${a.partId} failed: $e")
+            null
+        }
 
     private val ExportFormat.copiesAttachments: Boolean
         get() = this == ExportFormat.CSV || this == ExportFormat.JSON
 
     private companion object {
         const val ZIP_MIME = "application/zip"
+        const val FAILED_NOTE = "EXPORT_FAILED.txt"
     }
 }

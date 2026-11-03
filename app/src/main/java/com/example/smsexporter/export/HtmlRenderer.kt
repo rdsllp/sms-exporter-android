@@ -24,31 +24,43 @@ class HtmlRenderer(
     private val dayFmt = DateTimeFormatter.ofPattern("EEE, d MMM yyyy", Locale.ENGLISH)
     private val exportedFmt = DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale.ENGLISH)
 
-    /** [messages] are oldest first; [image] returns a data URI for an attachment, or null if unreadable. */
+    /** Convenience for tests: the whole page as one String. Exports use the streaming overload. */
     fun render(
         conversation: Conversation,
         messages: List<Message>,
         filter: MessageFilter,
         exportedAt: ZonedDateTime,
         image: (Attachment) -> String?,
-    ): String {
+    ): String = StringBuilder().also { render(it, conversation, messages, filter, exportedAt, image) }.toString()
+
+    /**
+     * Writes the page into [out] piece by piece, so the whole document is never held in memory
+     * (peak: one inlined image). [messages] are oldest first; [image] returns a data URI for an
+     * attachment, or null if unreadable.
+     */
+    fun render(
+        out: Appendable,
+        conversation: Conversation,
+        messages: List<Message>,
+        filter: MessageFilter,
+        exportedAt: ZonedDateTime,
+        image: (Attachment) -> String?,
+    ) {
         val title = escapeHtml(conversation.title)
-        val sb = StringBuilder()
-        sb.append("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">")
-        sb.append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
-        sb.append("<title>").append(title).append("</title><style>").append(css).append("</style></head><body>")
-        header(sb, conversation, messages.size, filter, exportedAt, title)
+        out.append("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">")
+        out.append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
+        out.append("<title>").append(title).append("</title><style>").append(css).append("</style></head><body>")
+        header(out, conversation, messages.size, filter, exportedAt, title)
         if (messages.isEmpty()) {
-            sb.append("<p class=\"empty\">No messages match the selected filter.</p>")
+            out.append("<p class=\"empty\">No messages match the selected filter.</p>")
         } else {
-            body(sb, conversation, messages, image)
+            body(out, conversation, messages, image)
         }
-        sb.append("</body></html>")
-        return sb.toString()
+        out.append("</body></html>")
     }
 
     private fun header(
-        sb: StringBuilder, c: Conversation, count: Int, filter: MessageFilter,
+        sb: Appendable, c: Conversation, count: Int, filter: MessageFilter,
         exportedAt: ZonedDateTime, title: String,
     ) {
         sb.append("<header class=\"pagehead\"><h1>").append(title).append("</h1>")
@@ -62,11 +74,11 @@ class HtmlRenderer(
         if (filter.isActive) {
             sb.append("<div class=\"filter\">Filter: ").append(escapeHtml(filter.describe())).append("</div>")
         }
-        sb.append("<div class=\"count\">").append(count)
+        sb.append("<div class=\"count\">").append(count.toString())
             .append(if (count == 1) " message" else " messages").append("</div></header>")
     }
 
-    private fun body(sb: StringBuilder, c: Conversation, messages: List<Message>, image: (Attachment) -> String?) {
+    private fun body(sb: Appendable, c: Conversation, messages: List<Message>, image: (Attachment) -> String?) {
         val ids = messages.mapTo(HashSet()) { it.id }
         fun isBadge(m: Message) =
             m.reaction?.targetId != null && m.direction == Direction.RECEIVED && m.reaction.targetId in ids
@@ -88,7 +100,7 @@ class HtmlRenderer(
     }
 
     private fun bubble(
-        sb: StringBuilder, c: Conversation, m: Message, at: ZonedDateTime,
+        sb: Appendable, c: Conversation, m: Message, at: ZonedDateTime,
         reactions: List<String>, image: (Attachment) -> String?,
     ) {
         val cls = when (m.direction) {
@@ -104,7 +116,8 @@ class HtmlRenderer(
         }
         val text = textOf(m)
         if (!text.isNullOrEmpty()) sb.append("<div class=\"text\">").append(multiline(text)).append("</div>")
-        m.attachments.forEach { attachment(sb, it, image) }
+        // a bot card shows its own image, which is also one of the attachments (as in MessageBubble)
+        if (m.botCard == null) m.attachments.forEach { attachment(sb, it, image) }
         m.botCard?.let { card(sb, it, image) }
         reactions.forEach { sb.append("<span class=\"react\">").append(escapeHtml(it)).append("</span>") }
         sb.append("<div class=\"meta\">").append(m.kind.name).append(" · ").append(timeFmt.format(at))
@@ -117,7 +130,7 @@ class HtmlRenderer(
         return if (r.quotedText != null) "${r.emoji} to “${r.quotedText}”" else r.emoji
     }
 
-    private fun attachment(sb: StringBuilder, a: Attachment, image: (Attachment) -> String?) {
+    private fun attachment(sb: Appendable, a: Attachment, image: (Attachment) -> String?) {
         when {
             a.isImage -> imageOrChip(sb, a, image)
             a.isVideo -> chip(sb, "[video ${a.fileName ?: "video"}]")
@@ -125,17 +138,19 @@ class HtmlRenderer(
         }
     }
 
-    private fun imageOrChip(sb: StringBuilder, a: Attachment, image: (Attachment) -> String?) {
+    private fun imageOrChip(sb: Appendable, a: Attachment, image: (Attachment) -> String?) {
         val uri = image(a)
         if (uri == null) {
             chip(sb, "[photo missing]")
         } else {
-            sb.append("<img src=\"").append(escapeHtml(uri)).append("\" alt=\"")
+            sb.append("<img src=\"")
+            appendEscaped(sb, uri) // straight into the output: no second copy of a large data URI
+            sb.append("\" alt=\"")
                 .append(escapeHtml(a.fileName ?: "photo")).append("\">")
         }
     }
 
-    private fun card(sb: StringBuilder, card: BotCard, image: (Attachment) -> String?) {
+    private fun card(sb: Appendable, card: BotCard, image: (Attachment) -> String?) {
         sb.append("<div class=\"card\">")
         card.imagePartId?.let { imageOrChip(sb, Attachment(it, "image/*", null, null), image) }
         card.title?.takeUnless { it.isBlank() }
@@ -146,14 +161,16 @@ class HtmlRenderer(
         sb.append("</div>")
     }
 
-    private fun chip(sb: StringBuilder, text: String) {
+    private fun chip(sb: Appendable, text: String) {
         sb.append("<span class=\"chip\">").append(escapeHtml(text)).append("</span>")
     }
 
     private fun multiline(s: String) = escapeHtml(s).replace("\r\n", "\n").replace("\n", "<br>")
 
-    private fun escapeHtml(s: String): String {
-        val sb = StringBuilder(s.length + 16)
+    private fun escapeHtml(s: String): String =
+        StringBuilder(s.length + 16).also { appendEscaped(it, s) }.toString()
+
+    private fun appendEscaped(sb: Appendable, s: String) {
         for (ch in s) {
             when (ch) {
                 '&' -> sb.append("&amp;")
@@ -164,6 +181,5 @@ class HtmlRenderer(
                 else -> sb.append(ch)
             }
         }
-        return sb.toString()
     }
 }
