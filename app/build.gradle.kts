@@ -35,6 +35,10 @@ android {
     buildFeatures {
         compose = true
     }
+    sourceSets {
+        getByName("test").kotlin.directories.add("src/testShared/java")
+        getByName("androidTest").kotlin.directories.add("src/testShared/java")
+    }
 }
 
 dependencies {
@@ -57,6 +61,7 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.test.rules)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
