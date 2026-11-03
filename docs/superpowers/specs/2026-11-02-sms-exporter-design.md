@@ -46,10 +46,11 @@ Research and a spike on the owner's Samsung (2026-11-02) established:
 ## 3. Non-goals and anti-goals
 
 - No sending, replying, notifications, or marking read.
-- Never the permanent default SMS app. The app must never leave itself as default.
-- No network use at all. The app never switches airplane mode itself (a normal app
-  cannot: the setting needs a system-only permission); default-app mode *requires*
-  airplane mode and verifies it (§5.7).
+- Never the default SMS app, not even briefly (§5.7).
+- No network use at all.
+- Never eligible for the SMS role: no `SMS_DELIVER`/`WAP_PUSH_DELIVER` receivers, no
+  `RESPOND_VIA_MESSAGE` service, no `SENDTO` filter, and only `READ_SMS` among the SMS
+  permissions (decided 2026-11-03, see §5.7).
 - No Play Store distribution (sideloaded; `READ_SMS` is fine).
 - Do not try to render **sent** reactions as badges (data does not exist, see §5.6).
 - Do not try to read Samsung Messages' private RCS store (`content://im/chat`).
@@ -68,10 +69,8 @@ Research and a spike on the owner's Samsung (2026-11-02) established:
   unreliable): draw with `android.graphics.pdf.PdfDocument`.
 - Export output: `Downloads/SmsExporter/` via MediaStore, then the system share
   sheet is offered immediately.
-- Permissions: `READ_SMS`, `RECEIVE_SMS`, `RECEIVE_MMS`, `RECEIVE_WAP_PUSH`,
-  `READ_CONTACTS`. Plus the SMS-role manifest components (SMS_DELIVER receiver,
-  WAP_PUSH_DELIVER receiver, SENDTO activity filter, RESPOND_VIA_MESSAGE service) so
-  the app is *eligible* for the role. The receivers are real, not no-ops: see §5.8.
+- Permissions: `READ_SMS` and `READ_CONTACTS` only. No SMS-role manifest components
+  (amended 2026-11-03, §5.7): the app must never be eligible for the role.
 
 ## 5. Data model and reading rules (verified on device)
 
@@ -141,65 +140,33 @@ glyph (opens in system player), others as a file chip with name and size.
 - Exports: PDF/HTML render as above. CSV/JSON keep the raw body and add
   `kind: "reaction"` plus `reactionTo` (matched message id or null) when detected.
 
-### 5.7 Default-app mode (fallback, off by default)
+### 5.7 Default-app mode — dropped (owner's decision, 2026-11-03)
 
-Purpose: expose rows that a future Google Messages version might hide from
-non-default apps. Flow when the user turns it on for an export:
+An earlier version of this section described an optional, export-only mode: with
+airplane mode on, the app would take the SMS role for the duration of the read, hand
+it back by disabling its own `SMS_DELIVER` receiver, then render. Its purpose was to
+expose rows that a future Google Messages version might hide from non-default apps.
 
-1. **Airplane-mode gate (owner's decision, 2026-11-03).** The app reads
-   `Settings.Global.AIRPLANE_MODE_ON`. If it is off, it shows a sheet explaining that
-   airplane mode must be on so no message can arrive while the app is temporarily
-   the default SMS app, with a button that opens the system Airplane mode page
-   (`Settings.ACTION_AIRPLANE_MODE_SETTINGS`). It proceeds only after the
-   `ACTION_AIRPLANE_MODE_CHANGED` broadcast (or a re-read on resume) confirms it is on.
-2. App requests the SMS role via `RoleManager.createRequestRoleIntent(ROLE_SMS)`.
-   One system dialog tap is unavoidable.
-3. App reads every needed row and attachment into temp files **while watching the
-   airplane-mode broadcast**. If airplane mode goes off at any point before the role
-   is released: stop reading immediately, release the role (steps 4–5), delete the
-   partial export, and tell the user: "Airplane mode was switched off, so the export
-   was cancelled and Google Messages is the default again. Keep airplane mode on
-   until the export finishes, then try again."
-4. App **disables its own `SMS_DELIVER` receiver component**
-   (`PackageManager.setComponentEnabledSetting`). Android then logs "Removing package
-   that no longer qualifies for the role" and hands the role to the device's fallback
-   (Google Messages). Verified on the Samsung. No user tap needed.
-5. App re-enables the receiver so it is eligible next time. Verified this does not
-   take the role back.
-6. On normal completion the role is released first, then rendering runs, then the
-   user is told airplane mode can be turned off.
+It was dropped after the Plan 3 spike on the Samsung showed that losing the role
+revokes the role-granted permissions and kills the app process immediately
+(logcat: "Removing package that no longer qualifies for the role" followed by
+"Killing …com.example.smsexporter… permissions revoked"). "Read, release, render"
+therefore cannot complete in one process; finishing the export would need a
+two-phase job that survives the kill. Since Plan 1 verified that every row,
+encrypted RCS included, is readable without the role, the owner chose to remove the
+mode and all role eligibility from the app instead (§3).
 
-Safety: if the app crashes while holding the role, on next launch it must detect
-`RoleManager.isRoleHeld(ROLE_SMS)` and immediately run steps 4–5.
+If a future Google Messages does hide rows, the path back is a two-phase export:
+read rows and attachments into the cache while holding the role, release, let
+Android kill the app, and finish rendering from the cache on the next launch or in
+a scheduled job. The original design is in this file's git history before
+2026-11-03.
 
-Default-app mode is **export-only**. Browsing never uses the role (verified: it is
-not needed to read anything, encrypted RCS included). To keep the window short, the
-export reads every needed row and attachment into memory or temp files first,
-releases the role (steps 4–5), and only then renders PDF/HTML/CSV/JSON.
+### 5.8 Messages arriving while the app holds the role — not applicable
 
-Builder's call: show a hint suggesting default-app mode when a conversation's
-`message_count` sum exceeds the rows actually readable, since that gap would be the
-symptom of hidden rows.
-
-### 5.8 Messages arriving while the app holds the role (owner's decision)
-
-Nothing may be silently dropped. With the airplane-mode gate (§5.7) no message should
-arrive in the window; the receivers below remain as a safety net for the moments
-between airplane mode going off and the role being released (author's call).
-
-- **SMS**: the `SMS_DELIVER` receiver parses the PDUs
-  (`Telephony.Sms.Intents.getMessagesFromIntent`) and inserts each message into
-  `content://sms` (`type` = received, `address`, `date`, `body`, `thread_id` via
-  `Telephony.Threads.getOrCreateThreadId`). Google Messages shows them as soon as it
-  is default again because it reads the same store. Multipart SMS must be
-  concatenated before insert.
-- **MMS**: the `WAP_PUSH_DELIVER` receiver stores the notification, then downloads
-  the content with `SmsManager.downloadMultimediaMessage` and inserts the resulting
-  PDU and parts into `content://mms`. If the download fails, keep the notification
-  row so Google Messages can retry it later.
-- **RCS**: cannot be received by anyone while Google Messages is not default. Not
-  verified, but believed to queue at Google's side or fall back to SMS; they catch up
-  once the role is returned. The UI states this in the default-app mode explanation.
+The app never holds the role (§5.7), so no message can be delivered to it and nothing
+needs storing. The earlier design (store incoming SMS/MMS into the provider while
+default) is in git history with §5.7.
 
 ## 6. Screens and behaviour (owner's spec)
 
@@ -307,19 +274,17 @@ the record is complete there.
 - HTML/PDF template details beyond §7.
 - Phone-number normalization library choice.
 - How the spike code (`app/src/main/java/com/example/smsexporter/spike/`, spike
-  parts of `MainActivity.kt` and the manifest) is removed or reworked. The manifest
-  role components stay; the dump UI goes.
+  parts of `MainActivity.kt` and the manifest) is removed or reworked. The dump UI
+  goes; the manifest role components went with §5.7 on 2026-11-03.
 - Test strategy. The provider can be faked behind a repository interface for unit
   tests; on-device checks against the owner's phone are the real acceptance test.
 
 ## 11. Decisions made after the builder check
 
-Owner decided: filters scope exports (§6.1); incoming SMS/MMS must be stored while
-the app holds the role (§5.8); default-app mode requires airplane mode, verified by
-the app, and aborts with the role released if airplane mode is switched off
-mid-export (§5.7, decided 2026-11-03, replacing the earlier "no airplane-mode
-handling").
+Owner decided: filters scope exports (§6.1); default-app mode and the incoming-message
+store are dropped and the app is never eligible for the SMS role (§5.7, §5.8, decided
+2026-11-03 after the role-loss kill was observed; this replaces the earlier
+airplane-mode-gated design).
 
-Author's calls (owner may overrule): export-only role window with read-then-release
-(§5.7); attachment folder layout and image fidelity (§7); auto-zip of single CSV/JSON
+Author's calls (owner may overrule): attachment folder layout and image fidelity (§7); auto-zip of single CSV/JSON
 exports with attachments (§7); message-type chip matches last message only (§6.1).
