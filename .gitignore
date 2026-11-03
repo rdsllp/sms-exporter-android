@@ -15,3 +15,7 @@
 local.properties
 .superpowers/
 *.hprof
+
+# Release signing (private; see keystore.properties.example)
+/keystore.properties
+/app/release.jks

@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -32,12 +34,34 @@ android {
         buildConfigField("String", "GIT_SHA", "\"${gitSha}\"")
     }
 
+    // Release signing. keystore.properties (git-ignored) sits next to settings.gradle.kts and
+    // names the keystore relative to app/. Without it the release build is left unsigned.
+    val keystoreFile = rootProject.file("keystore.properties")
+    val keystoreProps: Properties? = if (keystoreFile.exists()) {
+        val props = Properties()
+        keystoreFile.inputStream().use { props.load(it) }
+        props
+    } else null
+    signingConfigs {
+        if (keystoreProps != null) {
+            create("release") {
+                storeFile = file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            // Whole-app R8. The template's packageScope (androidx/kotlin/kotlinx only) crashed
+            // the app at launch on the Samsung with IllegalAccessError: a kotlin.sequences
+            // facade class was repackaged away from its package-private parent (2026-11-03).
             optimization {
                 enable = true
-                packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
             }
+            if (keystoreProps != null) signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
