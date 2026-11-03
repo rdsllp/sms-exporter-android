@@ -14,7 +14,7 @@ body {
 .bubble {
   position: relative; clear: both; width: fit-content; max-width: 80%;
   margin: 4px 0; padding: 8px 12px; border-radius: 16px;
-  overflow-wrap: anywhere; break-inside: avoid;
+  overflow-wrap: anywhere;
 }
 .bubble.in { background: #ececf0; margin-right: auto; border-bottom-left-radius: 4px; }
 .bubble.out { background: #cfe5ff; margin-left: auto; border-bottom-right-radius: 4px; }
