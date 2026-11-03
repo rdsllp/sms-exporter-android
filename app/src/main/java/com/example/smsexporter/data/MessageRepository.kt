@@ -128,11 +128,20 @@ class MessageRepository(private val source: MessageSource, private val names: Na
          * Per-table provider key equivalent to this cursor. For the other table at the same
          * timestamp: if it sorts after the cursor's table its rows there are all unseen
          * (id < MAX), otherwise they were all shown already (id < MIN).
+         *
+         * Invariant: an mms PageKey must carry a whole-second dateMs, because the provider
+         * stores mms dates in seconds and the source truncates the key with `/ 1000`. An sms
+         * cursor at 5_000_500 ms therefore becomes 5_001_000 (`date < 5001` admits mms at
+         * 5000 s, which are older); an exact 5_000_000 stays put (mms at 5000 s sort before
+         * that sms and were already shown).
          */
         fun PageCursor.keyFor(table: Source): PageKey = when {
             table == source -> PageKey(timestampMs, rowId)
             tableRank(table) > tableRank(source) -> PageKey(timestampMs, Long.MAX_VALUE)
+            table == Source.MMS_TABLE -> PageKey(ceilToSecond(timestampMs), Long.MIN_VALUE)
             else -> PageKey(timestampMs, Long.MIN_VALUE)
         }
+
+        fun ceilToSecond(ms: Long): Long = Math.floorDiv(ms + 999, 1000L) * 1000L
     }
 }

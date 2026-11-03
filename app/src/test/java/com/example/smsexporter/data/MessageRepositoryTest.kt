@@ -13,6 +13,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalDate
+import java.time.ZoneId
 
 class MessageRepositoryTest {
     private val related = "application/vnd.wap.multipart.related"
@@ -102,8 +104,36 @@ class MessageRepositoryTest {
         assertEquals(filled, repo.conversations())   // cached
     }
 
+    @Test fun smsCursorDoesNotSkipSameSecondMms() = runTest {
+        // the sms is half a second newer than two mms rows stored as whole seconds
+        val fake = FakeMessageSource(
+            sms = listOf(RawSms(9, 4, "+916666666666", 1, 5_000_500, "s")),
+            mms = (1L..2L).map { RawMms(it, 4, 1, 5_000_000, "T$it", related, true) },
+            parts = emptyList(),
+            addrs = (1L..2L).map { RawAddr(it, "+916666666666", 137) },
+        )
+        val repo = MessageRepository(fake, noNames)
+        val conv = repo.conversations().single()
+        val seen = mutableListOf<String>()
+        var cursor: PageCursor? = null
+        repeat(5) {
+            val p = repo.page(conv, MessageFilter(), cursor, limit = 1)
+            if (p.isEmpty()) return@repeat
+            seen += p.map { it.id.toString() }
+            cursor = PageCursor.of(p.last())
+        }
+        assertEquals(listOf("sms:9", "mms:2", "mms:1"), seen)
+    }
+
     @Test fun describeFilter() {
         assertEquals("", MessageFilter().describe())
-        assertTrue(MessageFilter(query = "axis", hasAttachment = true).describe().contains("axis"))
+        val zone = ZoneId.systemDefault()
+        val jan1 = LocalDate.of(2026, 1, 1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val oct31 = LocalDate.of(2026, 10, 31).atTime(12, 0).atZone(zone).toInstant().toEpochMilli()
+        assertEquals(
+            "1 Jan 2026 – 31 Oct 2026 · \"axis\" · attachments only · RCS",
+            MessageFilter(startMs = jan1, endMs = oct31, query = "axis", hasAttachment = true, kind = MessageKind.RCS).describe(),
+        )
+        assertEquals("from 1 Jan 2026", MessageFilter(startMs = jan1).describe())
     }
 }

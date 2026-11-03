@@ -39,7 +39,7 @@ class FakeMessageSource(
 
     override suspend fun mms(threadIds: Collection<Long>, where: RowFilter, limit: Int, before: PageKey?): List<RawMms> =
         mmsMatching(threadIds, where)
-            .filter { isAfter(it.dateMs, it.id, before) }
+            .filter { isAfterInSeconds(it.dateMs, it.id, before) }
             .sortedWith(compareByDescending<RawMms> { it.dateMs }.thenByDescending { it.id })
             .take(limit.coerceAtLeast(0))
 
@@ -76,6 +76,17 @@ class FakeMessageSource(
     /** True when the row comes after [before] in `(date DESC, id DESC)` order. */
     private fun isAfter(dateMs: Long, id: Long, before: PageKey?) =
         before == null || dateMs < before.dateMs || (dateMs == before.dateMs && id < before.id)
+
+    /**
+     * Like [isAfter] but compares whole seconds, as [TelephonyMessageSource] does for mms (the
+     * provider stores seconds and the key's dateMs is truncated with `/ 1000`).
+     */
+    private fun isAfterInSeconds(dateMs: Long, id: Long, before: PageKey?): Boolean {
+        if (before == null) return true
+        val sec = Math.floorDiv(dateMs, 1000L)
+        val keySec = before.dateMs / 1000L
+        return sec < keySec || (sec == keySec && id < before.id)
+    }
 
     private fun asciiLower(s: String): String =
         buildString(s.length) { s.forEach { c -> append(if (c in 'A'..'Z') c + 32 else c) } }

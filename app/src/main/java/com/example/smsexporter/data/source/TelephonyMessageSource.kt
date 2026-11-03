@@ -235,7 +235,7 @@ class TelephonyMessageSource(private val resolver: ContentResolver) : MessageSou
     override suspend fun newestPerThread(): Map<Long, ThreadNewest> = withContext(Dispatchers.IO) {
         val out = HashMap<Long, ThreadNewest>()
         // Rows come newest first, so the first row seen for a thread is its newest.
-        resolver.query(MMS_URI, arrayOf("thread_id", "date", "tr_id"), null, null, "date DESC")?.use { c ->
+        resolver.query(MMS_URI, arrayOf("thread_id", "date", "tr_id"), null, null, "date DESC, _id DESC")?.use { c ->
             val t = c.getColumnIndexOrThrow("thread_id")
             val d = c.getColumnIndexOrThrow("date")
             val tr = c.getColumnIndexOrThrow("tr_id")
@@ -247,7 +247,7 @@ class TelephonyMessageSource(private val resolver: ContentResolver) : MessageSou
             }
         }
         val smsSeen = HashSet<Long>()
-        resolver.query(SMS_URI, arrayOf("thread_id", "date"), null, null, "date DESC")?.use { c ->
+        resolver.query(SMS_URI, arrayOf("thread_id", "date"), null, null, "date DESC, _id DESC")?.use { c ->
             val t = c.getColumnIndexOrThrow("thread_id")
             val d = c.getColumnIndexOrThrow("date")
             while (c.moveToNext()) {
