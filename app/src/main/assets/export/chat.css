@@ -45,5 +45,7 @@ body {
   body { max-width: none; padding: 0; }
   .day { page-break-after: avoid; }
   .bubble img, .bubble img.poster { max-width: 70%; }
-  .bubble, .card { page-break-inside: avoid; }
+  /* a bubble's text may break across pages; an image stays whole and never exceeds a page */
+  .card { page-break-inside: avoid; }
+  .bubble img { page-break-inside: avoid; max-height: 170mm; width: auto; }
 }
