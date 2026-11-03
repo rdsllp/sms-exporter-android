@@ -4,8 +4,11 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.util.Base64
+import androidx.exifinterface.media.ExifInterface
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.ByteArrayOutputStream
+import java.io.File
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -56,5 +59,29 @@ class ImageScalerTest {
         out.recycle()
         val rgb = "%08x".format(p)
         assertTrue("transparent half should be white, was $rgb", Color.red(p) >= 0xF0 && Color.green(p) >= 0xF0 && Color.blue(p) >= 0xF0)
+    }
+
+    @Test
+    fun exifRotationIsApplied() {
+        val bmp = Bitmap.createBitmap(200, 100, Bitmap.Config.ARGB_8888)
+        bmp.eraseColor(Color.rgb(200, 80, 40))
+        val jpeg = ByteArrayOutputStream().also { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
+        bmp.recycle()
+        val file = File.createTempFile("exif-", ".jpg", InstrumentationRegistry.getInstrumentation().targetContext.cacheDir)
+        try {
+            file.writeBytes(jpeg)
+            ExifInterface(file).apply {
+                setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_ROTATE_90.toString())
+                saveAttributes()
+            }
+            val uri = ImageScaler.toDataUri(file.readBytes())!!
+            val bytes = Base64.decode(uri.removePrefix("data:image/jpeg;base64,"), Base64.DEFAULT)
+            val out = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)!!
+            assertEquals(100, out.width)
+            assertEquals(200, out.height)
+            out.recycle()
+        } finally {
+            file.delete()
+        }
     }
 }
