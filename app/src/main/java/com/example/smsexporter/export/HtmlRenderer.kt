@@ -69,12 +69,19 @@ class HtmlRenderer(
      */
     private fun pageHeaderRule(out: Appendable, rawTitle: String, exportedAt: ZonedDateTime) {
         val suffix = " · Exported " + headerDateFmt.format(exportedAt.withZoneSameInstant(zone))
-        val oneLine = rawTitle.replace('\r', ' ').replace('\n', ' ')
+        // every control char becomes a space: CSS also ends a string at a form feed, not just \r/\n
+        val oneLine = rawTitle.map { if (it < ' ' || it == '\u007F') ' ' else it }.joinToString("")
         val room = HEADER_MAX - suffix.length
-        val name = if (oneLine.length <= room) oneLine else oneLine.take(room - 1).trimEnd() + "…"
+        val name = if (oneLine.length <= room) oneLine else cutBefore(oneLine, room - 1).trimEnd() + "…"
         out.append("\n@page { @top-center { content: \"")
         cssString(out, name + suffix)
         out.append("\"; font-size: 10px; color: #666; } }\n")
+    }
+
+    /** The first [maxChars] chars of [s], one fewer if that would split a surrogate pair. */
+    private fun cutBefore(s: String, maxChars: Int): String {
+        val end = if (maxChars in 1 until s.length && s[maxChars - 1].isHighSurrogate()) maxChars - 1 else maxChars
+        return s.take(end)
     }
 
     /** Escapes [s] for a double-quoted CSS string inside a <style> element. */

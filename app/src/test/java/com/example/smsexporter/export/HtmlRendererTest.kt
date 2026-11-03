@@ -177,6 +177,41 @@ class HtmlRendererTest {
         assertFalse("cannot close the style element", html.contains("</style>\n") || html.indexOf("</style>") < html.indexOf("@top-center"))
         // the rule sits inside the one <style> element, after the css
         assertTrue(html.indexOf("body{margin:0}") < html.indexOf("@page {"))
+        assertTrue(content, content.contains("\\3c /style>"))
+
+        // a form feed is a CSS newline: unescaped, it would end the string and inject the rest as css
+        val ff = Participant("num:1", "+1", "A\u000C} body{display:none} x{\u0001\u007F<b")
+        val html2 = render(listOf(msg(1)), c = conv.copy(participants = listOf(ff)))
+            .substringAfter("<style>").substringBefore("</style>") // the title is also in <title>/<h1>
+        val whole = Regex("""@page \{ @top-center \{ content: "((?:\\.|[^"\\\n\u000C])*)"; font-size: 10px; color: #666; \} \}""")
+            .find(html2)
+        assertTrue(html2, whole != null)
+        val content2 = whole!!.groupValues[1]
+        assertFalse("no form feed in the style element", html2.contains('\u000C'))
+        assertFalse("no control chars", content2.any { it < ' ' || it == '\u007F' })
+        assertTrue(content2, content2.startsWith("A } body{display:none} x{  \\3c b · Exported"))
+        // "} body{" occurs only inside the quoted string
+        assertEquals(1, Regex(Regex.escape("} body{")).findAll(html2).count())
+    }
+
+    @Test
+    fun pdfHeaderTruncationKeepsSurrogatePairs() {
+        val emoji = "\uD83D\uDE00" // one code point, two chars
+        val suffixLen = " · Exported 2 Nov 2026".length
+        val room = 80 - suffixLen
+        // put an emoji across the cut point (room - 1) so a char-based take() would split it
+        val title = "x".repeat(room - 2) + emoji.repeat(20)
+        val html = render(listOf(msg(1)), c = conv.copy(participants = listOf(Participant("num:1", "+1", title))))
+        val content = Regex("""content: "((?:\\.|[^"\\])*)";""").find(html)!!.groupValues[1]
+        val beforeEllipsis = content.substringBefore("…")
+        assertTrue(content, content.contains("…"))
+        assertFalse("lone high surrogate before …", beforeEllipsis.last().isHighSurrogate())
+        assertTrue(content.length <= 80)
+        for (i in beforeEllipsis.indices) {
+            val ch = beforeEllipsis[i]
+            if (ch.isHighSurrogate()) assertTrue(i + 1 < beforeEllipsis.length && beforeEllipsis[i + 1].isLowSurrogate())
+            if (ch.isLowSurrogate()) assertTrue(i > 0 && beforeEllipsis[i - 1].isHighSurrogate())
+        }
     }
 
     @Test
