@@ -68,7 +68,7 @@ class FakeMessageSource(
         mms.sortedWith(compareByDescending<RawMms> { it.dateMs }.thenByDescending { it.id }).forEach { m ->
             if (m.threadId in out) return@forEach
             val kind = if (m.trId?.startsWith("proto:") == true) MessageKind.RCS else MessageKind.MMS
-            out[m.threadId] = ThreadNewest(m.dateMs, kind, m.id)
+            out[m.threadId] = ThreadNewest(m.dateMs, kind, m.id, m.trId)
         }
         sms.forEach { s ->
             if ((out[s.threadId]?.dateMs ?: Long.MIN_VALUE) < s.dateMs) out[s.threadId] = ThreadNewest(s.dateMs, MessageKind.SMS, null)

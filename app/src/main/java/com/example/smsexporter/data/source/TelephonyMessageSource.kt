@@ -247,8 +247,9 @@ class TelephonyMessageSource(private val resolver: ContentResolver) : MessageSou
             while (c.moveToNext()) {
                 val tid = c.getLong(t)
                 if (tid in out) continue
-                val kind = if (c.getStringOrNull(tr)?.startsWith("proto:") == true) MessageKind.RCS else MessageKind.MMS
-                out[tid] = ThreadNewest(c.getLong(d) * 1000L, kind, c.getLong(id))
+                val trId = c.getStringOrNull(tr)
+                val kind = if (trId?.startsWith("proto:") == true) MessageKind.RCS else MessageKind.MMS
+                out[tid] = ThreadNewest(c.getLong(d) * 1000L, kind, c.getLong(id), trId)
             }
         }
         val smsSeen = HashSet<Long>()

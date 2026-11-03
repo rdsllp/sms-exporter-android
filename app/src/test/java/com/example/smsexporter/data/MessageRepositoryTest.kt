@@ -204,4 +204,39 @@ class MessageRepositoryTest {
         assertEquals(501, all.size)
         assertEquals("sms:1", all.first().reaction?.targetId?.toString())
     }
+
+    private val botBlob = "njuw64ddl5xwmztfojzv6oddm55gsolrnnpwcz3f@bot.rcs.google.com"
+
+    @Test fun fillLastKindsNamesRcsBots() = runTest {
+        val fake = FakeMessageSource(
+            sms = emptyList(),
+            mms = listOf(RawMms(1, 20, 1, 3000, RcsBotIdentityTest.SAMPLE_TR_ID, related, true)),
+            parts = emptyList(),
+            addrs = emptyList(),
+            threads = listOf(RawThread(20, listOf(1), 3000, 1, null, false)),
+            canonical = mapOf(1L to botBlob),
+        )
+        val repo = MessageRepository(fake, noNames, log = {})
+        val before = repo.conversations().single()
+        val after = repo.fillLastKinds().single()
+        assertEquals("JioPC Offers", after.title)
+        assertEquals(botBlob, after.participants.single().rawAddress)
+        assertEquals(before.key, after.key)
+    }
+
+    @Test fun fillLastKindsFallsBackToAgentAddress() = runTest {
+        val fake = FakeMessageSource(
+            sms = emptyList(),
+            mms = listOf(RawMms(1, 20, 1, 3000, "proto:AAAA", related, true)),
+            parts = emptyList(),
+            addrs = listOf(RawAddr(1, "bharatpe_vjsvze3v_agent@rbm.goog", 137)),
+            threads = listOf(RawThread(20, listOf(1), 3000, 1, null, false)),
+            canonical = mapOf(1L to botBlob),
+        )
+        val repo = MessageRepository(fake, noNames, log = {})
+        val before = repo.conversations().single()
+        val after = repo.fillLastKinds().single()
+        assertEquals("bharatpe_vjsvze3v_agent@rbm.goog", after.title)
+        assertEquals(before.key, after.key)
+    }
 }

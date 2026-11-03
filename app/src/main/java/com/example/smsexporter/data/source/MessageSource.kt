@@ -29,9 +29,9 @@ data class PageKey(val dateMs: Long, val id: Long)
 
 /**
  * Date and kind of the newest row of a thread across both tables. `dateMs` is milliseconds.
- * [mmsId] is that row's `_id` when it is an mms/RCS row, null when it is an sms.
+ * [mmsId] and [trId] are that row's `_id` and `tr_id` when it is an mms/RCS row, null when it is an sms.
  */
-data class ThreadNewest(val dateMs: Long, val kind: MessageKind, val mmsId: Long?)
+data class ThreadNewest(val dateMs: Long, val kind: MessageKind, val mmsId: Long?, val trId: String? = null)
 
 data class RowFilter(val startMs: Long? = null, val endMs: Long? = null, val bodyContains: String? = null)
 

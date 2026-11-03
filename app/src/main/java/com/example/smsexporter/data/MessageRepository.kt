@@ -88,12 +88,26 @@ class MessageRepository(
         val t1 = System.nanoTime()
         val partSnippets = if (needSnippet.isEmpty()) emptyMap()
         else source.parts(needSnippet).mapValues { (_, parts) -> mmsSnippet(parts) }
+        // RCS bots: the address is an opaque blob, so name them from the newest row's tr_id,
+        // falling back to the agent address in its mms addr table
+        val botIndices = conversations.indices.filter { i -> conversations[i].isUnnamedBot() }
+        val botNames = botIndices.associateWith { i -> RcsBotIdentity.agentName(newestOf[i]?.trId) }
+        val fallbackIds = botIndices.filter { botNames[it] == null }.mapNotNull { newestOf[it]?.mmsId }
+        val fromAddrs = if (fallbackIds.isEmpty()) emptyMap() else source.addrs(fallbackIds)
+        var namedBots = 0
         val filled = conversations.mapIndexed { i, c ->
             val n = newestOf[i]
             val snippet = if (c.snippet.isNullOrBlank()) n?.mmsId?.let { partSnippets[it] } ?: c.snippet else c.snippet
-            c.copy(lastKind = n?.kind, snippet = snippet)
+            val botName = if (i in botNames) {
+                botNames[i] ?: n?.mmsId?.let { id -> fromAddrs[id]?.firstOrNull { it.type == ADDR_FROM && it.address.isNotBlank() }?.address }
+            } else null
+            val named = if (botName != null) {
+                namedBots++
+                c.copy(participants = listOf(c.participants.single().copy(displayName = botName)))
+            } else c
+            named.copy(lastKind = n?.kind, snippet = snippet)
         }
-        log("fillLastKinds ${ms(t0, System.nanoTime())} ms (snippets for ${needSnippet.size} mms in ${ms(t1, System.nanoTime())} ms)")
+        log("fillLastKinds ${ms(t0, System.nanoTime())} ms (snippets for ${needSnippet.size} mms in ${ms(t1, System.nanoTime())} ms, $namedBots named bots)")
         // skip the store if a refresh replaced the cache meanwhile
         cacheLock.withLock { if (cache === conversations) cache = filled }
         return filled
@@ -173,6 +187,12 @@ class MessageRepository(
 
     private companion object {
         const val ALL_STEP = 500
+        const val ADDR_FROM = 137
+
+        /** One participant, no contact name, whose address is an opaque RCS bot blob. */
+        fun Conversation.isUnnamedBot(): Boolean =
+            participants.singleOrNull()?.let { it.displayName == null && RcsBotIdentity.isOpaque(it.rawAddress) } == true
+
         const val SNIPPET_MAX = 120
 
         /** First non-blank text part (trimmed, at most [SNIPPET_MAX] chars), else an attachment placeholder, else null. */
