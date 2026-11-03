@@ -4,6 +4,16 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+// Short commit of HEAD for the device check report; "unknown" when git is unavailable. Uses
+// providers.exec (configuration-cache safe): Gradle re-runs it to check a cached configuration, so a
+// new commit invalidates the cache and BuildConfig.GIT_SHA follows HEAD.
+val gitSha: String = runCatching {
+    providers.exec {
+        commandLine("git", "rev-parse", "--short", "HEAD")
+        isIgnoreExitValue = true
+    }.standardOutput.asText.get().trim()
+}.getOrDefault("").ifEmpty { "unknown" }
+
 android {
     namespace = "com.example.smsexporter"
     compileSdk {
@@ -18,6 +28,7 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "GIT_SHA", "\"${gitSha}\"")
     }
 
     buildTypes {
@@ -34,6 +45,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     sourceSets {
         getByName("test").kotlin.directories.add("src/testShared/java")

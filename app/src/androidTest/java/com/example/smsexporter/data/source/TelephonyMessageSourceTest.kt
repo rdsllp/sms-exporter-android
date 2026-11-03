@@ -12,6 +12,7 @@ import com.example.smsexporter.data.MessageFilter
 import com.example.smsexporter.data.MessageRepository
 import com.example.smsexporter.data.model.MessageKind
 import com.example.smsexporter.data.NameLookup
+import com.example.smsexporter.diag.DeviceCheck
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -106,5 +107,16 @@ import org.junit.runner.RunWith
         assertTrue(numbers.size > 100)
         assertEquals(0, diffs)
         assertTrue("suffix gate never skipped a lookup", skipped > 0)
+    }
+    /** The device check report on real data: rows and RCS counted, an image part read. Logs the timings line only. */
+    @Test fun deviceCheckRunsOnDevice() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val report = DeviceCheck(context, src, MessageRepository(src, NameLookup { _, _ -> null })).run().text
+        val lines = report.lines()
+        Log.i("TelephonyMessageSourceTest", lines.first { it.startsWith("timings ms: ") })
+        val rows = lines.first { it.startsWith("rows: sms=") }
+        val rcs = Regex(""" rcs=(\d+) """).find(rows)?.groupValues?.get(1)?.toInt() ?: 0
+        assertTrue("no RCS rows counted", rcs > 0)
+        assertTrue("image part not read", lines.any { it.startsWith("image part read: ok") })
     }
 }

@@ -166,6 +166,10 @@ class TelephonyMessageSource(private val resolver: ContentResolver) : MessageSou
         out
     }
 
+    override suspend fun rcsCount(): Int = withContext(Dispatchers.IO) {
+        resolver.query(MMS_URI, arrayOf("_id"), "tr_id LIKE 'proto:%'", null, null)?.use { it.count } ?: 0
+    }
+
     override fun openPart(partId: Long): InputStream? =
         resolver.openInputStream(Uri.parse("content://mms/part/$partId"))
 

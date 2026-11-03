@@ -8,6 +8,7 @@ import com.example.smsexporter.data.ContactResolver
 import com.example.smsexporter.data.MessageFilter
 import com.example.smsexporter.data.MessageRepository
 import com.example.smsexporter.data.source.TelephonyMessageSource
+import com.example.smsexporter.diag.CrashLog
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
@@ -24,6 +25,11 @@ class SmsExporterApp : Application(), ImageLoaderFactory {
 
     /** Keys of the conversation list's visible conversations in display order; the chat pager pages through them. */
     val listOrder = MutableStateFlow<List<String>>(emptyList())
+
+    override fun onCreate() {
+        super.onCreate()
+        CrashLog.install(this)   // keeps the last crash in filesDir/crash.log for the device check report
+    }
 
     /** Coil's singleton loader, able to decode a video's first frame. */
     override fun newImageLoader(): ImageLoader =

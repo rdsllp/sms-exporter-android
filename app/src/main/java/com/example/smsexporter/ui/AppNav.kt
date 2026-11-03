@@ -11,16 +11,20 @@ import androidx.navigation.compose.rememberNavController
 import com.example.smsexporter.SmsExporterApp
 import com.example.smsexporter.data.forConversation
 import com.example.smsexporter.ui.conversation.ConversationScreen
+import com.example.smsexporter.ui.diag.DiagnosticsScreen
 import com.example.smsexporter.ui.list.ConversationListScreen
 
-/** Routes: `list` and `conversation/{key}` (key URL-encoded). Default transitions, predictive back. */
+/** Routes: `list`, `conversation/{key}` (key URL-encoded) and `diagnostics`. Default transitions, predictive back. */
 @Composable
 fun AppNav() {
     val nav = rememberNavController()
     val app = LocalContext.current.applicationContext as SmsExporterApp
     NavHost(nav, startDestination = "list") {
         composable("list") {
-            ConversationListScreen(onOpen = { key -> nav.navigate("conversation/${Uri.encode(key)}") })
+            ConversationListScreen(
+                onOpen = { key -> nav.navigate("conversation/${Uri.encode(key)}") },
+                onDeviceCheck = { nav.navigate("diagnostics") },
+            )
         }
         composable("conversation/{key}") { entry ->
             // navigation already URL-decodes path arguments (NavDeepLink.getMatchingPathArguments)
@@ -37,5 +41,6 @@ fun AppNav() {
             val start = rememberSaveable(entry) { keys.indexOf(key) } // present: see the fallback above
             ConversationScreen(keys = keys, startIndex = start, initialFilter = filter, onBack = { nav.popBackStack() })
         }
+        composable("diagnostics") { DiagnosticsScreen(onBack = { nav.popBackStack() }) }
     }
 }

@@ -56,4 +56,7 @@ interface MessageSource {
 
     /** Newest row per thread id across sms and mms (mms wins a same-millisecond tie), from one scan per table. */
     suspend fun newestPerThread(): Map<Long, ThreadNewest>
+
+    /** Number of RCS rows: `content://mms` rows whose `tr_id` starts with `proto:`. */
+    suspend fun rcsCount(): Int
 }

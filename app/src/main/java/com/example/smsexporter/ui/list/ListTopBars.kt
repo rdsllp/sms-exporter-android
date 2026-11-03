@@ -11,6 +11,7 @@ import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.IosShare
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -39,10 +40,11 @@ private val SORT_LABELS = listOf(
     SortOrder.NAME_DESC to "Name (Z–A)",
 )
 
-/** Search field with a clear button, and the sort menu. */
+/** Search field with a clear button, the sort menu, and the overflow menu (Device check). */
 @Composable
-fun SearchTopBar(query: String, onQuery: (String) -> Unit, sort: SortOrder, onSort: (SortOrder) -> Unit) {
+fun SearchTopBar(query: String, onQuery: (String) -> Unit, sort: SortOrder, onSort: (SortOrder) -> Unit, onDeviceCheck: () -> Unit) {
     var menuOpen by remember { mutableStateOf(false) }
+    var overflowOpen by remember { mutableStateOf(false) }
     Surface {
         Row(
             Modifier.fillMaxWidth().statusBarsPadding().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 4.dp),
@@ -73,6 +75,12 @@ fun SearchTopBar(query: String, onQuery: (String) -> Unit, sort: SortOrder, onSo
                             trailingIcon = { if (order == sort) Icon(Icons.Filled.Check, contentDescription = "Current") },
                         )
                     }
+                }
+            }
+            Box {
+                IconButton(onClick = { overflowOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More options") }
+                DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
+                    DropdownMenuItem(text = { Text("Device check") }, onClick = { overflowOpen = false; onDeviceCheck() })
                 }
             }
         }

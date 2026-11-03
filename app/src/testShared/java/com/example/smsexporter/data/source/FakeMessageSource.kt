@@ -58,6 +58,8 @@ class FakeMessageSource(
 
     override suspend fun mmsCount(threadIds: Collection<Long>, where: RowFilter): Int = mmsMatching(threadIds, where).size
 
+    override suspend fun rcsCount(): Int = mms.count { it.trId?.startsWith("proto:") == true }
+
     override fun openPart(partId: Long): InputStream? = partBytes[partId]?.inputStream()
 
     override suspend fun newestPerThread(): Map<Long, ThreadNewest> {

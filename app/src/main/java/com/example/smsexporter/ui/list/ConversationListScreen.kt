@@ -42,7 +42,7 @@ import kotlinx.coroutines.launch
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ConversationListScreen(onOpen: (key: String) -> Unit) {
+fun ConversationListScreen(onOpen: (key: String) -> Unit, onDeviceCheck: () -> Unit) {
     val app = LocalContext.current.applicationContext as SmsExporterApp
     val vm: ConversationListViewModel = viewModel(
         factory = viewModelFactory {
@@ -85,6 +85,7 @@ fun ConversationListScreen(onOpen: (key: String) -> Unit) {
                     onQuery = { text = it; vm.setQuery(it) },
                     sort = state.sort,
                     onSort = vm::setSort,
+                    onDeviceCheck = onDeviceCheck,
                 )
             }
         },
