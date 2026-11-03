@@ -52,10 +52,11 @@ class HtmlRenderer(
         exportedAt: ZonedDateTime, title: String,
     ) {
         sb.append("<header class=\"pagehead\"><h1>").append(title).append("</h1>")
-        if (c.isGroup) {
-            val names = c.participants.joinToString(", ") { escapeHtml(it.label) }
-            sb.append("<div class=\"participants\">").append(names).append("</div>")
+        val names = c.participants.joinToString(", ") {
+            val extra = if (it.displayName != null && it.displayName != it.rawAddress) " (${it.rawAddress})" else ""
+            escapeHtml(it.label + extra)
         }
+        sb.append("<div class=\"participants\">").append(names).append("</div>")
         sb.append("<div class=\"exported\">Exported ")
             .append(exportedFmt.format(exportedAt.withZoneSameInstant(zone))).append("</div>")
         if (filter.isActive) {
@@ -137,9 +138,11 @@ class HtmlRenderer(
     private fun card(sb: StringBuilder, card: BotCard, image: (Attachment) -> String?) {
         sb.append("<div class=\"card\">")
         card.imagePartId?.let { imageOrChip(sb, Attachment(it, "image/*", null, null), image) }
-        card.title?.let { sb.append("<div class=\"card-title\">").append(multiline(it)).append("</div>") }
-        card.description?.let { sb.append("<div class=\"card-desc\">").append(multiline(it)).append("</div>") }
-        card.suggestions.forEach { chip(sb, it) }
+        card.title?.takeUnless { it.isBlank() }
+            ?.let { sb.append("<div class=\"card-title\">").append(multiline(it)).append("</div>") }
+        card.description?.takeUnless { it.isBlank() }
+            ?.let { sb.append("<div class=\"card-desc\">").append(multiline(it)).append("</div>") }
+        card.suggestions.filter { it.isNotBlank() }.forEach { chip(sb, it) }
         sb.append("</div>")
     }
 

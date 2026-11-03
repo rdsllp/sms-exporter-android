@@ -2,6 +2,7 @@ package com.example.smsexporter.export
 
 import com.example.smsexporter.data.MessageFilter
 import com.example.smsexporter.data.model.Attachment
+import com.example.smsexporter.data.model.BotCard
 import com.example.smsexporter.data.model.Conversation
 import com.example.smsexporter.data.model.Direction
 import com.example.smsexporter.data.model.Message
@@ -102,6 +103,7 @@ class HtmlRendererTest {
         assertTrue(active, active.contains("Filter: &quot;axis&quot;"))
         assertTrue(active.contains("1 message<"))
         assertFalse(render(listOf(msg(1))).contains("Filter:"))
+        assertTrue(active.contains("Priya (+91 98009 97986)"))
     }
 
     @Test
@@ -115,5 +117,41 @@ class HtmlRendererTest {
         assertTrue(html.contains("<div class=\"sender\">+91 91111 11111</div>"))
         assertTrue(html.contains("bubble out failed"))
         assertTrue(html.contains("SMS · 18:42 · Not sent"))
+    }
+
+    @Test
+    fun scriptsAndHostileAttributesAreEscaped() {
+        val xss = "<script>alert(1)</script><img src=x onerror=\"alert(1)\">"
+        val photo = Attachment(7, "image/jpeg", "a\" onerror=\"x'.jpg", 10)
+        val html = render(listOf(msg(1, body = xss, attachments = listOf(photo))), image = { "data:image/jpeg;base64,AAA" })
+        assertTrue(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"))
+        assertFalse(html.contains("<script"))
+        assertFalse(html.contains("onerror=\""))
+        assertTrue(html.contains("alt=\"a&quot; onerror=&quot;x&#39;.jpg\""))
+    }
+
+    @Test
+    fun titleParticipantAndCardTextAreEscaped() {
+        val evil = Participant("num:1", "+1 <i>", "<i>Bob</i>")
+        val c = conv.copy(participants = listOf(evil, priya))
+        val card = BotCard("<i>t</i>", "<i>d</i>", null, listOf("<i>s</i>"))
+        val m = msg(1).copy(botCard = card)
+        val html = render(listOf(m), c = c)
+        assertFalse(html.contains("<i>"))
+        assertTrue(html.contains("<title>&lt;i&gt;Bob&lt;/i&gt;, Priya</title>"))
+        assertTrue(html.contains("&lt;i&gt;Bob&lt;/i&gt; (+1 &lt;i&gt;)"))
+        assertTrue(html.contains("<div class=\"card-title\">&lt;i&gt;t&lt;/i&gt;</div>"))
+        assertTrue(html.contains("<div class=\"card-desc\">&lt;i&gt;d&lt;/i&gt;</div>"))
+        assertTrue(html.contains("<span class=\"chip\">&lt;i&gt;s&lt;/i&gt;</span>"))
+    }
+
+    @Test
+    fun emptyCardPartsAreOmitted() {
+        val m = msg(1).copy(botCard = BotCard("", " ", null, listOf("", "Go")))
+        val html = render(listOf(m))
+        assertFalse(html.contains("card-title"))
+        assertFalse(html.contains("card-desc"))
+        assertFalse(html.contains("<span class=\"chip\"></span>"))
+        assertTrue(html.contains("<span class=\"chip\">Go</span>"))
     }
 }

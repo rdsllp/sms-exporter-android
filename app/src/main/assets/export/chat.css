@@ -34,8 +34,8 @@ body {
   background: #e2e2e6; color: #333; border-radius: 12px;
 }
 .empty { text-align: center; font-style: italic; color: #666; margin: 40px 0; }
+@page { size: A4; margin: 16mm; }
 @media print {
-  @page { size: A4; margin: 16mm; }
   body { max-width: none; padding: 0; }
   .day { page-break-after: avoid; }
   .bubble img { max-width: 70%; }
