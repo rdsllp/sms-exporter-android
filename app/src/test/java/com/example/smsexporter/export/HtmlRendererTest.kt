@@ -58,7 +58,7 @@ class HtmlRendererTest {
         assertTrue(html.contains("RCS · 18:42"))
         assertTrue(html.contains("Sat, 31 Oct 2026"))
         assertTrue(html.contains("Exported 2 Nov 2026, 09:05"))
-        assertTrue(html.contains("<style>body{margin:0}</style>"))
+        assertTrue(html.contains("<style>body{margin:0}\n@page { @top-center"))
     }
 
     @Test
@@ -162,5 +162,29 @@ class HtmlRendererTest {
         val html = render(listOf(m), image = { "data:image/jpeg;base64,AAA" })
         assertEquals(html, 1, Regex("<img").findAll(html).count())
         assertTrue(html.contains("<div class=\"card\"><img"))
+    }
+
+    @Test
+    fun pdfHeaderRuleIsEmittedAndEscaped() {
+        val odd = Participant("num:1", "+1", "Say \"hi\" \\ </style>\nnext")
+        val html = render(listOf(msg(1)), c = conv.copy(participants = listOf(odd)))
+        val rule = Regex("""@page \{ @top-center \{ content: "((?:\\.|[^"\\])*)";""").find(html)
+        assertTrue(html, rule != null)
+        val content = rule!!.groupValues[1]
+        assertTrue(content, content.contains("Say \\\"hi\\\" \\\\ "))
+        assertTrue(content, content.endsWith(" · Exported 2 Nov 2026"))
+        assertFalse("no raw newline", content.contains('\n'))
+        assertFalse("cannot close the style element", html.contains("</style>\n") || html.indexOf("</style>") < html.indexOf("@top-center"))
+        // the rule sits inside the one <style> element, after the css
+        assertTrue(html.indexOf("body{margin:0}") < html.indexOf("@page {"))
+    }
+
+    @Test
+    fun pdfHeaderTruncatesLongTitle() {
+        val long = Participant("num:1", "+1", "x".repeat(200))
+        val html = render(listOf(msg(1)), c = conv.copy(participants = listOf(long)))
+        val content = Regex("""content: "((?:\\.|[^"\\])*)";""").find(html)!!.groupValues[1]
+        assertTrue(content, content.length <= 80)
+        assertTrue(content, content.contains("…"))
     }
 }

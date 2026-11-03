@@ -22,6 +22,7 @@ class HtmlRenderer(
 ) {
     private val timeFmt = DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)
     private val dayFmt = DateTimeFormatter.ofPattern("EEE, d MMM yyyy", Locale.ENGLISH)
+    private val headerDateFmt = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH)
     private val exportedFmt = DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale.ENGLISH)
 
     /** Convenience for tests: the whole page as one String. Exports use the streaming overload. */
@@ -49,7 +50,9 @@ class HtmlRenderer(
         val title = escapeHtml(conversation.title)
         out.append("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">")
         out.append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
-        out.append("<title>").append(title).append("</title><style>").append(css).append("</style></head><body>")
+        out.append("<title>").append(title).append("</title><style>").append(css)
+        pageHeaderRule(out, conversation.title, exportedAt)
+        out.append("</style></head><body>")
         header(out, conversation, messages.size, filter, exportedAt, title)
         if (messages.isEmpty()) {
             out.append("<p class=\"empty\">No messages match the selected filter.</p>")
@@ -57,6 +60,33 @@ class HtmlRenderer(
             body(out, conversation, messages, image)
         }
         out.append("</body></html>")
+    }
+
+    /**
+     * The PDF's running header, "<title> · Exported <date>", as an `@page` margin box. Android
+     * WebView renders literal margin-box content but not string-set/string(), so the text is
+     * written into the rule itself.
+     */
+    private fun pageHeaderRule(out: Appendable, rawTitle: String, exportedAt: ZonedDateTime) {
+        val suffix = " · Exported " + headerDateFmt.format(exportedAt.withZoneSameInstant(zone))
+        val oneLine = rawTitle.replace('\r', ' ').replace('\n', ' ')
+        val room = HEADER_MAX - suffix.length
+        val name = if (oneLine.length <= room) oneLine else oneLine.take(room - 1).trimEnd() + "…"
+        out.append("\n@page { @top-center { content: \"")
+        cssString(out, name + suffix)
+        out.append("\"; font-size: 10px; color: #666; } }\n")
+    }
+
+    /** Escapes [s] for a double-quoted CSS string inside a <style> element. */
+    private fun cssString(out: Appendable, s: String) {
+        for (ch in s) {
+            when (ch) {
+                '\\' -> out.append("\\\\")
+                '"' -> out.append("\\\"")
+                '<' -> out.append("\\3c ") // so the text can never close the <style> element
+                else -> out.append(ch)
+            }
+        }
     }
 
     private fun header(
@@ -181,5 +211,10 @@ class HtmlRenderer(
                 else -> sb.append(ch)
             }
         }
+    }
+
+    private companion object {
+        /** Longest header text, in characters, before the title is cut with "…". */
+        const val HEADER_MAX = 80
     }
 }
