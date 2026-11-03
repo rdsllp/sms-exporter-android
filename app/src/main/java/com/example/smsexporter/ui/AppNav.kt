@@ -24,7 +24,11 @@ fun AppNav() {
             val key = Uri.decode(entry.arguments?.getString("key").orEmpty())
             // the list's filter (date range, attachments, kind) when this conversation was opened
             val filter = remember(entry) { app.listFilter.value.copy(query = null) }
-            ConversationScreen(key = key, initialFilter = filter, onBack = { nav.popBackStack() })
+            // the list's order when this conversation was opened, for swiping between conversations;
+            // just this one when there is no list order (deep link, process death) or it lacks the key
+            val keys = remember(entry) { app.listOrder.value.takeIf { key in it } ?: listOf(key) }
+            val start = remember(entry) { keys.indexOf(key).coerceAtLeast(0) }
+            ConversationScreen(keys = keys, startIndex = start, initialFilter = filter, onBack = { nav.popBackStack() })
         }
     }
 }

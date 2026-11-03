@@ -42,7 +42,8 @@ data class ListUiState(
  * Conversation list: keeps every conversation in memory and derives the visible, sorted list
  * from (query, filter, sort). [dispatcher] runs loading and list derivation; [log] receives the
  * refresh timing (replaced in unit tests, where android.util.Log is unavailable);
- * [onFilterChanged] receives every [setFilter] value.
+ * [onFilterChanged] receives every [setFilter] value; [onOrderChanged] receives the visible
+ * conversations' keys, in display order, whenever the visible list changes.
  */
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 class ConversationListViewModel(
@@ -50,6 +51,7 @@ class ConversationListViewModel(
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val log: (String) -> Unit = { Log.i("ListVm", it) },
     private val onFilterChanged: (MessageFilter) -> Unit = {},
+    private val onOrderChanged: (List<String>) -> Unit = {},
 ) : ViewModel() {
     /** Null while the first load is running. */
     private val all = MutableStateFlow<List<Conversation>?>(null)
@@ -88,6 +90,7 @@ class ConversationListViewModel(
     private val visible = combine(all, search, filter, sort) { list, s, f, order ->
         list?.let { visibleList(it, s, f, order) }
     }.flowOn(dispatcher).onEach { list ->
+        if (list != null) onOrderChanged(list.map { it.key })
         if (!firstStateLogged && !list.isNullOrEmpty()) {
             firstStateLogged = true
             log("refresh to first non-empty state: ${(System.nanoTime() - refreshStartNs) / 1_000_000} ms (${list.size} visible)")

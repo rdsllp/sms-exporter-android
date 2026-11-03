@@ -37,7 +37,17 @@ import kotlinx.coroutines.launch
 @Composable
 fun ConversationListScreen(onOpen: (key: String) -> Unit) {
     val app = LocalContext.current.applicationContext as SmsExporterApp
-    val vm: ConversationListViewModel = viewModel(factory = viewModelFactory { initializer { ConversationListViewModel(app.repository, onFilterChanged = { app.listFilter.value = it }) } })
+    val vm: ConversationListViewModel = viewModel(
+        factory = viewModelFactory {
+            initializer {
+                ConversationListViewModel(
+                    app.repository,
+                    onFilterChanged = { app.listFilter.value = it },
+                    onOrderChanged = { app.listOrder.value = it },
+                )
+            }
+        },
+    )
     val state by vm.state.collectAsStateWithLifecycle()
     // the field owns its text so typing never waits for the view model
     var text by rememberSaveable { mutableStateOf(state.query) }

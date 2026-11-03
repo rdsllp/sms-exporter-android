@@ -1,30 +1,25 @@
 package com.example.smsexporter.ui.conversation
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -32,56 +27,69 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.smsexporter.SmsExporterApp
-import com.example.smsexporter.data.AddressNormalizer
 import com.example.smsexporter.data.MessageFilter
 import com.example.smsexporter.data.model.Conversation
-import com.example.smsexporter.data.model.Direction
-import com.example.smsexporter.data.model.Message
 import kotlinx.coroutines.launch
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
 
-/** Navigation entry: builds the view model for [key], scoped by the list's [initialFilter]. */
+/** Drags that begin this close to the start edge are left to the system back gesture. */
+private val BACK_EDGE = 24.dp
+
+/**
+ * Navigation entry: the conversations [keys] (the list's order) in a horizontal pager, opened at
+ * [startIndex]. Each page has its own view model (stored on the nav entry under "conv:<key>"),
+ * scoped by the list's [initialFilter]; only the visible page is composed.
+ */
 @Composable
-fun ConversationScreen(key: String, initialFilter: MessageFilter, onBack: () -> Unit) {
+fun ConversationScreen(keys: List<String>, startIndex: Int, initialFilter: MessageFilter, onBack: () -> Unit) {
     val app = LocalContext.current.applicationContext as SmsExporterApp
-    val vm: ConversationViewModel = viewModel(
-        factory = viewModelFactory { initializer { ConversationViewModel(app.repository, key, initialFilter) } },
-    )
-    ConversationScreen(vm, onBack)
+    val pager = rememberPagerState(initialPage = startIndex) { keys.size }
+    val vmFor: @Composable (Int) -> ConversationViewModel = { page ->
+        val key = keys[page]
+        viewModel(
+            key = "conv:$key",
+            factory = viewModelFactory { initializer { ConversationViewModel(app.repository, key, initialFilter) } },
+        )
+    }
+    ConversationPager(pager, pageKey = { keys[it] }, vmFor = vmFor, onBack = onBack)
 }
 
-/** Read-only chat view of one conversation, newest message at the bottom. */
+/** Read-only chat view of one conversation (a one-page pager); used by the instrumented test. */
 @Composable
 fun ConversationScreen(vm: ConversationViewModel, onBack: () -> Unit) {
+    val pager = rememberPagerState { 1 }
+    ConversationPager(pager, pageKey = { "single" }, vmFor = { vm }, onBack = onBack)
+}
+
+/**
+ * Scaffold with the current page's top bar (title crossfades on page change; search and export
+ * act on the current page) over the pager. A drag starting on a bubble goes to its details reveal,
+ * any other drag pages; a drag starting within [BACK_EDGE] of the start edge never pages.
+ */
+@Composable
+private fun ConversationPager(
+    pager: PagerState,
+    pageKey: (Int) -> Any,
+    vmFor: @Composable (Int) -> ConversationViewModel,
+    onBack: () -> Unit,
+) {
+    val vm = vmFor(pager.currentPage)
     val state by vm.state.collectAsStateWithLifecycle()
-    var searchOpen by rememberSaveable { mutableStateOf(false) }
-    var text by rememberSaveable { mutableStateOf(state.filter.query.orEmpty()) }
+    // per page: a page whose search is active shows it again when it becomes current
+    var searchOpen by rememberSaveable(pageKey(pager.currentPage)) { mutableStateOf(vm.state.value.filter.query != null) }
+    var text by rememberSaveable(pageKey(pager.currentPage)) { mutableStateOf(vm.state.value.filter.query.orEmpty()) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val closeSearch = { searchOpen = false; text = ""; vm.setSearch(null) }
+    var fromEdge by remember { mutableStateOf(false) }
 
     BackHandler(enabled = searchOpen) { closeSearch() }
 
-    val conversation = state.conversation
-    val rows = remember(state.messages) { dayRows(state.messages) }
-    val senders = remember(conversation) { conversation?.let(::senderNames).orEmpty() }
-    val listState = rememberLazyListState()
-    val nearEnd by remember {
-        derivedStateOf {
-            val info = listState.layoutInfo
-            val last = info.visibleItemsInfo.lastOrNull()?.index ?: -1
-            info.totalItemsCount > 0 && last >= info.totalItemsCount - 20
-        }
-    }
-    LaunchedEffect(nearEnd, rows.size) { if (nearEnd) vm.loadMore() }
-
     Scaffold(
         topBar = {
+            val c = state.conversation
             ConversationTopBar(
-                title = conversation?.title.orEmpty(),
-                subtitle = subtitle(state.total, conversation, state.filter, state.loadingMore && state.messages.isEmpty()),
+                title = c?.title.orEmpty(),
+                subtitle = subtitle(state.total, c, state.filter, state.loadingMore && state.messages.isEmpty()),
                 searchOpen = searchOpen,
                 query = text,
                 onQuery = { text = it; vm.setSearch(it) },
@@ -93,76 +101,28 @@ fun ConversationScreen(vm: ConversationViewModel, onBack: () -> Unit) {
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize()) {
-            when {
-                state.messages.isEmpty() && state.loadingMore ->
-                    CircularProgressIndicator(Modifier.align(Alignment.Center))
-                state.messages.isEmpty() -> Text(
-                    when {
-                        conversation == null -> "Conversation not found"
-                        state.filter.isActive -> "No messages match"
-                        else -> "No messages"
-                    },
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.align(Alignment.Center).padding(32.dp),
-                )
-                else -> LazyColumn(Modifier.fillMaxSize(), state = listState, reverseLayout = true) {
-                    items(rows, key = { it.key }, contentType = { it.contentType }) { row ->
-                        when (row) {
-                            is DayRow -> DaySeparator(row.date)
-                            is MessageRow -> MessageBubble(
-                                m = row.message,
-                                reactions = state.reactionsByTarget[row.message.id],
-                                sender = if (conversation?.isGroup == true && row.message.direction == Direction.RECEIVED) {
-                                    senders[AddressNormalizer.normalize(row.message.address)] ?: row.message.address
-                                } else null,
-                            )
-                        }
-                    }
-                    if (state.loadingMore) {
-                        item(key = "loading") {
-                            Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                        }
-                    }
+        HorizontalPager(
+            state = pager,
+            modifier = Modifier.padding(padding).pointerInput(Unit) {
+                val edge = BACK_EDGE.toPx()
+                awaitEachGesture {
+                    // observe only: never consumes, so bubbles and the list still see the touch
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    fromEdge = down.position.x < edge
+                    do {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                    } while (event.changes.any { it.pressed })
+                    fromEdge = false
                 }
-            }
+            },
+            beyondViewportPageCount = 0,
+            userScrollEnabled = !fromEdge,
+            key = pageKey,
+        ) { page ->
+            ConversationPage(vmFor(page))
         }
     }
 }
-
-/** One LazyColumn item: a message or the date label above a day's messages. */
-private sealed interface Row { val key: String; val contentType: String }
-private class MessageRow(val message: Message) : Row {
-    override val key = message.id.toString()
-    override val contentType get() = "message"
-}
-private class DayRow(val date: LocalDate) : Row {
-    override val key = "day:$date"
-    override val contentType get() = "day"
-}
-
-/**
- * Items for the reversed list from newest-first [messages]: each day's messages followed by the
- * day's label (which shows above them). The label after the oldest loaded message moves up as
- * older pages arrive.
- */
-private fun dayRows(messages: List<Message>): List<Row> {
-    val zone = ZoneId.systemDefault()
-    val out = ArrayList<Row>(messages.size + 16)
-    var current: LocalDate? = null
-    for (m in messages) {
-        val date = Instant.ofEpochMilli(m.timestampMs).atZone(zone).toLocalDate()
-        if (current != null && date != current) out += DayRow(current)
-        current = date
-        out += MessageRow(m)
-    }
-    current?.let { out += DayRow(it) }
-    return out
-}
-
-/** Participant label by normalized address. */
-private fun senderNames(c: Conversation): Map<String, String> = c.participants.associate { it.normalized to it.label }
 
 /** "27 messages", or "4 of 27 match" when the filter narrows the conversation. */
 private fun subtitle(total: Int, c: Conversation?, filter: MessageFilter, loading: Boolean): String = when {

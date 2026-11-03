@@ -22,6 +22,9 @@ class SmsExporterApp : Application(), ImageLoaderFactory {
     /** The conversation list's current filter; a conversation opened from the list starts with it. */
     val listFilter = MutableStateFlow(MessageFilter())
 
+    /** Keys of the conversation list's visible conversations in display order; the chat pager pages through them. */
+    val listOrder = MutableStateFlow<List<String>>(emptyList())
+
     /** Coil's singleton loader, able to decode a video's first frame. */
     override fun newImageLoader(): ImageLoader =
         ImageLoader.Builder(this).components { add(VideoFrameDecoder.Factory()) }.build()

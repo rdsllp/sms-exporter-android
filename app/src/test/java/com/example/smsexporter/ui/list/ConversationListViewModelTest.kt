@@ -107,6 +107,14 @@ class ConversationListViewModelTest {
         assertEquals(3, vm.titles().size)
     }
 
+    @Test fun reportsVisibleOrderAfterSort() = runTest(dispatcher) {
+        var order = emptyList<String>()
+        val vm = ConversationListViewModel(MessageRepository(source, names), dispatcher, log = {}, onOrderChanged = { order = it })
+        vm.setSort(SortOrder.NAME_ASC)
+        advanceUntilIdle()
+        assertEquals(vm.state.value.conversations.map { it.key }, order)
+    }
+
     @Test fun secondRefreshWinsOverStaleKindFill() = runTest(dispatcher) {
         val repo = MessageRepository(source, names)
         val vm = ConversationListViewModel(repo, dispatcher, log = {})

@@ -1,5 +1,6 @@
 package com.example.smsexporter.ui.conversation
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -69,10 +70,13 @@ fun ConversationTopBar(
                     ),
                 )
             } else {
-                Column {
-                    Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (subtitle.isNotEmpty()) {
-                        Text(subtitle, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // crossfades when the pager moves to another conversation (and when the count loads)
+                Crossfade(targetState = title to subtitle, label = "title") { (t, sub) ->
+                    Column {
+                        Text(t, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (sub.isNotEmpty()) {
+                            Text(sub, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
             }

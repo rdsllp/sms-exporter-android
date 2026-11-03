@@ -35,6 +35,8 @@ private val PILL = RoundedCornerShape(50)
  * One message: received on the start side (surfaceVariant), sent/failed on the end side (primary).
  * A message that is itself a reaction renders as a small emoji bubble. [reactions] are badges of
  * received reactions targeting this message; [sender] is shown above received bubbles in groups.
+ * Dragging the bubble leftward reveals the message details ([RevealOnDrag]); the row's margins
+ * are left to the conversation pager.
  */
 @Composable
 fun MessageBubble(m: Message, reactions: List<Reaction>?, sender: String?, modifier: Modifier = Modifier) {
@@ -54,22 +56,24 @@ fun MessageBubble(m: Message, reactions: List<Reaction>?, sender: String?, modif
             if (received && sender != null) {
                 Text(sender, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant, modifier = Modifier.padding(start = 12.dp, bottom = 2.dp))
             }
-            Box(Modifier.padding(bottom = if (reactions.isNullOrEmpty()) 0.dp else 16.dp)) {
-                Surface(
-                    shape = if (received) RECEIVED_SHAPE else SENT_SHAPE,
-                    color = if (received) colors.surfaceVariant else colors.primary,
-                    contentColor = if (received) colors.onSurfaceVariant else colors.onPrimary,
-                    border = if (m.direction == Direction.FAILED) BorderStroke(1.5.dp, colors.error) else null,
-                ) {
-                    val reaction = m.reaction
-                    if (reaction != null) ReactionContent(reaction) else MessageContent(m)
-                }
-                if (!reactions.isNullOrEmpty()) {
-                    ReactionBadge(
-                        reactions,
-                        Modifier.align(if (received) Alignment.BottomEnd else Alignment.BottomStart)
-                            .offset(x = if (received) 14.dp else (-14).dp, y = 14.dp),
-                    )
+            RevealOnDrag(details = { MessageDetails(m) }) {
+                Box(Modifier.padding(bottom = if (reactions.isNullOrEmpty()) 0.dp else 16.dp)) {
+                    Surface(
+                        shape = if (received) RECEIVED_SHAPE else SENT_SHAPE,
+                        color = if (received) colors.surfaceVariant else colors.primary,
+                        contentColor = if (received) colors.onSurfaceVariant else colors.onPrimary,
+                        border = if (m.direction == Direction.FAILED) BorderStroke(1.5.dp, colors.error) else null,
+                    ) {
+                        val reaction = m.reaction
+                        if (reaction != null) ReactionContent(reaction) else MessageContent(m)
+                    }
+                    if (!reactions.isNullOrEmpty()) {
+                        ReactionBadge(
+                            reactions,
+                            Modifier.align(if (received) Alignment.BottomEnd else Alignment.BottomStart)
+                                .offset(x = if (received) 14.dp else (-14).dp, y = 14.dp),
+                        )
+                    }
                 }
             }
             Row(Modifier.padding(horizontal = 8.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
