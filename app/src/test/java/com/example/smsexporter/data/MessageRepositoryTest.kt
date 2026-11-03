@@ -125,6 +125,23 @@ class MessageRepositoryTest {
         assertEquals(listOf("sms:9", "mms:2", "mms:1"), seen)
     }
 
+    @Test fun conversationKeysWithTextFindsBodiesInOnlyMatchingConversation() = runTest {
+        val fake = FakeMessageSource(
+            sms = listOf(
+                RawSms(1, 20, "JD-AxisBk", 1, 1000, "Your OTP is 1234"),
+                RawSms(2, 21, "+917777777777", 1, 2000, "see you at lunch"),
+            ),
+            mms = listOf(RawMms(3, 21, 1, 3000, "T3", related, true)),
+            parts = listOf(RawPart(30, 3, "text/plain", null, "photo later", null)),
+            addrs = listOf(RawAddr(3, "+917777777777", 137)),
+        )
+        val repo = MessageRepository(fake, noNames)
+        val keys = repo.conversations().associate { it.threadIds.single() to it.key }
+        assertEquals(setOf(keys.getValue(20)), repo.conversationKeysWithText("otp"))
+        assertEquals(setOf(keys.getValue(21)), repo.conversationKeysWithText("PHOTO"))
+        assertEquals(emptySet<String>(), repo.conversationKeysWithText("nothing here"))
+    }
+
     @Test fun describeFilter() {
         assertEquals("", MessageFilter().describe())
         val zone = ZoneId.systemDefault()

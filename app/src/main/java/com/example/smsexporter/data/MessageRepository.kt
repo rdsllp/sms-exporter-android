@@ -56,6 +56,19 @@ class MessageRepository(private val source: MessageSource, private val names: Na
     }
 
     /**
+     * Keys of the cached conversations that have an sms body or mms text part containing [query]
+     * (literal, ASCII case-insensitive), looking at up to [rowLimit] newest matching rows per table.
+     */
+    suspend fun conversationKeysWithText(query: String, rowLimit: Int = 500): Set<String> {
+        val keyOf = HashMap<Long, String>()
+        conversations().forEach { c -> c.threadIds.forEach { keyOf[it] = c.key } }
+        val where = RowFilter(bodyContains = query)
+        val threadIds = source.sms(keyOf.keys, where, rowLimit, null).map { it.threadId } +
+            source.mms(keyOf.keys, where, rowLimit, null).map { it.threadId }
+        return threadIds.mapNotNullTo(HashSet()) { keyOf[it] }
+    }
+
+    /**
      * Up to [limit] messages after [before] (from the newest when null), newest first, both
      * tables merged, reactions attached. Pass `PageCursor.of(page.last())` to get the next page.
      */
