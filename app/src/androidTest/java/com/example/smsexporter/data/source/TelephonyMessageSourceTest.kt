@@ -5,18 +5,21 @@ import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
+import com.example.smsexporter.data.ContactResolver
 import com.example.smsexporter.data.MessageFilter
 import com.example.smsexporter.data.MessageRepository
 import com.example.smsexporter.data.NameLookup
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class) class TelephonyMessageSourceTest {
-    @get:Rule val perm: GrantPermissionRule = GrantPermissionRule.grant(Manifest.permission.READ_SMS)
+    @get:Rule val perm: GrantPermissionRule = GrantPermissionRule.grant(Manifest.permission.READ_SMS, Manifest.permission.READ_CONTACTS)
     private val src = TelephonyMessageSource(InstrumentationRegistry.getInstrumentation().targetContext.contentResolver)
     @Test fun threadsAndAddressesLoadQuickly() = runBlocking {
         val t0 = System.nanoTime()
@@ -68,5 +71,16 @@ import org.junit.runner.RunWith
         assertTrue("fillLastKinds took ${fillMs}ms", fillMs < 2000)
         assertTrue("only $withKind of ${filled.size} have lastKind", withKind * 10 >= filled.size * 9)
         assertTrue("page took ${pageMs}ms", pageMs < 300)
+    }
+    @Test fun contactResolverResolvesSavedNumberAndSkipsSenderIds() {
+        val resolver = ContactResolver(InstrumentationRegistry.getInstrumentation().targetContext.contentResolver)
+        val name = resolver.name("num:8617482941", "+918617482941")
+        assertNotNull("saved contact not found", name)
+        assertNull(resolver.name("raw:jd-axisbk", "JD-AxisBk"))
+        val t0 = System.nanoTime()
+        resolver.name("num:8617482941", "+918617482941")
+        val elapsedNs = System.nanoTime() - t0
+        Log.i("TelephonyMessageSourceTest", "contactNameLength=${name!!.length} cachedCallNs=$elapsedNs")
+        assertTrue("cached call took ${elapsedNs}ns", elapsedNs < 1_000_000)
     }
 }
