@@ -26,7 +26,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
 /** Prints an HTML document to PDF through a WebView's PrintDocumentAdapter. */
-class PdfPrinter(private val context: Context) {
+class PdfPrinter(context: Context) {
+    // Application context only, so a caller's Activity is never retained.
+    private val appContext: Context = context.applicationContext
 
     suspend fun print(html: String, out: OutputStream) {
         try {
@@ -40,7 +42,7 @@ class PdfPrinter(private val context: Context) {
         var webView: WebView? = null
         try {
             val adapter = withContext(Dispatchers.Main) {
-                val wv = WebView(context.applicationContext)
+                val wv = WebView(appContext)
                 webView = wv
                 wv.settings.javaScriptEnabled = false
                 wv.settings.allowFileAccess = false
@@ -119,7 +121,9 @@ class PdfPrinter(private val context: Context) {
             }
             reader.await()
         } catch (e: Throwable) {
-            // Unblock the reader if it is still waiting on the pipe, then let it finish.
+            // The Main block may never have run (cancelled before dispatch), so close the
+            // write end here too; that gives the reader EOF. Closing twice is harmless.
+            runCatching { writeFd.close() }
             reader.cancel()
             runCatching { readFd.close() }
             throw e

@@ -46,6 +46,7 @@ class PdfPrinterTest {
     fun longDocumentSpansPages() {
         val body = (1..400).joinToString("") { "<p>Line $it</p>" }
         val bytes = printToBytes("<html><body>$body</body></html>")
+        assertTrue("PDF output too short: ${bytes.size} bytes", bytes.size >= 4)
         assertEquals("%PDF", String(bytes, 0, 4, Charsets.US_ASCII))
         val pages = pageCount(bytes)
         assertTrue("expected >= 2 pages, got $pages", pages >= 2)
