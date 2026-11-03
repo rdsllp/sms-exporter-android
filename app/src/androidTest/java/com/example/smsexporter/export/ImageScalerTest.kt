@@ -7,6 +7,7 @@ import android.util.Base64
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.ByteArrayOutputStream
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -37,5 +38,23 @@ class ImageScalerTest {
     @Test
     fun undecodableInputGivesNull() {
         assertNull(ImageScaler.toDataUri(byteArrayOf(1, 2, 3)))
+    }
+
+    @Test
+    fun transparentAreasBecomeWhite() {
+        val bmp = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
+        bmp.eraseColor(Color.TRANSPARENT)
+        for (x in 32 until 64) for (y in 0 until 64) bmp.setPixel(x, y, Color.rgb(200, 80, 40))
+        val png = ByteArrayOutputStream().also { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        bmp.recycle()
+
+        val uri = ImageScaler.toDataUri(png)!!
+        val bytes = Base64.decode(uri.removePrefix("data:image/jpeg;base64,"), Base64.DEFAULT)
+        val out = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)!!
+        assertEquals(64, out.width)
+        val p = out.getPixel(8, 32)
+        out.recycle()
+        val rgb = "%08x".format(p)
+        assertTrue("transparent half should be white, was $rgb", Color.red(p) >= 0xF0 && Color.green(p) >= 0xF0 && Color.blue(p) >= 0xF0)
     }
 }
