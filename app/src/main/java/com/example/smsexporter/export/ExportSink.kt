@@ -52,9 +52,12 @@ private class PendingDownload(
 
     /** MediaStore may rename on collision (`x (1).pdf`), so read the real name back. */
     fun displayPath(fallback: String): String {
-        val name = resolver.query(uri, arrayOf(MediaStore.Downloads.DISPLAY_NAME), null, null, null)?.use {
-            if (it.moveToFirst()) it.getString(0) else null
-        } ?: fallback
+        // never throws: it runs after publish(), when failing would make close() delete a finished file
+        val name = runCatching {
+            resolver.query(uri, arrayOf(MediaStore.Downloads.DISPLAY_NAME), null, null, null)?.use {
+                if (it.moveToFirst()) it.getString(0) else null
+            }
+        }.getOrNull() ?: fallback
         return "$subDir/$name"
     }
 
@@ -79,7 +82,14 @@ class DownloadsSink(
         val row = PendingDownload(contentResolver, path, mime, subDir)
         rows += row
         names[row] = path
-        val s = row.openStream()
+        val s = try {
+            row.openStream()
+        } catch (t: Throwable) {
+            row.delete() // don't leave a pending row behind
+            rows.remove(row)
+            names.remove(row)
+            throw t
+        }
         stream = s
         return s
     }
@@ -125,7 +135,14 @@ class ZipSink private constructor(private val target: Target) : ExportSink {
     }
 
     private class MediaTarget(val row: PendingDownload, val name: String) : Target {
-        override val out: OutputStream = BufferedOutputStream(row.openStream())
+        override val out: OutputStream = BufferedOutputStream(
+            try {
+                row.openStream()
+            } catch (t: Throwable) {
+                row.delete() // the ZipSink is never built, so nobody else could clean this row up
+                throw t
+            },
+        )
         override fun finish(): ExportResult {
             row.publish()
             return ExportResult(row.uri.toString(), row.displayPath(name))
@@ -174,8 +191,9 @@ class ZipSink private constructor(private val target: Target) : ExportSink {
         current?.close()
         zip.finish()
         zip.close() // also closes the underlying file stream
+        val result = target.finish() // if publishing throws, done stays false and close() aborts
         done = true
-        return target.finish()
+        return result
     }
 
     override fun abort() {

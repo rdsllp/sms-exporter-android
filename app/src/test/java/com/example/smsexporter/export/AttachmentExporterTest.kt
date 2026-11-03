@@ -10,6 +10,11 @@ import java.util.zip.ZipInputStream
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
+import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
+import com.example.smsexporter.data.source.MessageSource
 import org.junit.Test
 
 class AttachmentExporterTest {
@@ -43,5 +48,36 @@ class AttachmentExporterTest {
             assertEquals("attachments/7.jpg", z.nextEntry.name)
             assertArrayEquals(data, z.readBytes())
         }
+    }
+
+    @Test
+    fun sinkWriteFailurePropagates() {
+        val failing = object : ExportSink {
+            override fun open(path: String, mime: String): OutputStream = object : OutputStream() {
+                override fun write(b: Int) = throw IOException("disk full")
+            }
+            override fun finish() = ExportResult("", "")
+            override fun abort() {}
+            override fun close() {}
+        }
+        val r = repo(mapOf(7L to byteArrayOf(1, 2, 3)))
+        assertThrows(IOException::class.java) { AttachmentExporter(r).copy(att, failing, "x") }
+    }
+
+    @Test
+    fun inputFailureMidCopyReturnsNull() {
+        val fake = FakeMessageSource(emptyList(), emptyList(), emptyList(), emptyList())
+        val src = object : MessageSource by fake {
+            override fun openPart(partId: Long): InputStream = object : InputStream() {
+                var n = 0
+                override fun read(): Int {
+                    if (n++ >= 2) throw IOException("provider died")
+                    return 1
+                }
+            }
+        }
+        val r = MessageRepository(src, NameLookup { _, _ -> null })
+        val sink = ZipSink(ByteArrayOutputStream())
+        assertNull(AttachmentExporter(r).copy(att, sink, "x"))
     }
 }
