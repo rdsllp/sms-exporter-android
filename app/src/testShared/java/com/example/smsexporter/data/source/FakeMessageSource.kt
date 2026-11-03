@@ -10,6 +10,8 @@ import java.io.InputStream
  * - threads: one per distinct `threadId`; `recipientIds` = canonical ids of the addresses seen
  *   in that thread; `messageCount` = sms + mms rows; `dateMs`/`snippet` from the newest row;
  *   `hasAttachment` = any part of its mms that is not text/plain or application/smil.
+ *
+ * `bodyContains` is a literal substring match folding ASCII A-Z only, like SQLite LIKE.
  */
 class FakeMessageSource(
     private val sms: List<RawSms>,
@@ -28,15 +30,15 @@ class FakeMessageSource(
 
     override suspend fun canonicalAddresses(): Map<Long, String> = canonicalMap
 
-    override suspend fun sms(threadIds: Collection<Long>, where: RowFilter, limit: Int, beforeMs: Long?): List<RawSms> =
+    override suspend fun sms(threadIds: Collection<Long>, where: RowFilter, limit: Int, before: PageKey?): List<RawSms> =
         smsMatching(threadIds, where)
-            .filter { beforeMs == null || it.dateMs < beforeMs }
+            .filter { isAfter(it.dateMs, it.id, before) }
             .sortedWith(compareByDescending<RawSms> { it.dateMs }.thenByDescending { it.id })
             .take(limit.coerceAtLeast(0))
 
-    override suspend fun mms(threadIds: Collection<Long>, where: RowFilter, limit: Int, beforeMs: Long?): List<RawMms> =
+    override suspend fun mms(threadIds: Collection<Long>, where: RowFilter, limit: Int, before: PageKey?): List<RawMms> =
         mmsMatching(threadIds, where)
-            .filter { beforeMs == null || it.dateMs < beforeMs }
+            .filter { isAfter(it.dateMs, it.id, before) }
             .sortedWith(compareByDescending<RawMms> { it.dateMs }.thenByDescending { it.id })
             .take(limit.coerceAtLeast(0))
 
@@ -58,6 +60,16 @@ class FakeMessageSource(
 
     // ---- filtering ----
 
+    /** True when the row comes after [before] in `(date DESC, id DESC)` order. */
+    private fun isAfter(dateMs: Long, id: Long, before: PageKey?) =
+        before == null || dateMs < before.dateMs || (dateMs == before.dateMs && id < before.id)
+
+    private fun asciiLower(s: String): String =
+        buildString(s.length) { s.forEach { c -> append(if (c in 'A'..'Z') c + 32 else c) } }
+
+    private fun likeContains(haystack: String?, term: String) =
+        haystack != null && asciiLower(haystack).contains(asciiLower(term))
+
     private fun inRange(dateMs: Long, where: RowFilter) =
         (where.startMs == null || dateMs >= where.startMs) && (where.endMs == null || dateMs <= where.endMs)
 
@@ -65,14 +77,14 @@ class FakeMessageSource(
         val ids = threadIds.toSet()
         return sms.filter { s ->
             s.threadId in ids && inRange(s.dateMs, where) &&
-                (where.bodyContains == null || s.body?.contains(where.bodyContains, ignoreCase = true) == true)
+                (where.bodyContains == null || likeContains(s.body, where.bodyContains))
         }
     }
 
     private fun mmsMatching(threadIds: Collection<Long>, where: RowFilter): List<RawMms> {
         val ids = threadIds.toSet()
         val textMids: Set<Long>? = where.bodyContains?.let { term ->
-            parts.filter { it.contentType == "text/plain" && it.text?.contains(term, ignoreCase = true) == true }
+            parts.filter { it.contentType == "text/plain" && likeContains(it.text, term) }
                 .map { it.mid }.toSet()
         }
         return mms.filter { m ->

@@ -32,4 +32,17 @@ import org.junit.runner.RunWith
         assertTrue(rcs.isNotEmpty())
         assertTrue(src.parts(rcs.map { it.id }).isNotEmpty())
     }
+    @Test fun smsPagingAndLimit() = runBlocking {
+        val ids = src.threads().map { it.id }
+        val page1 = src.sms(ids, RowFilter(), limit = 5, before = null)
+        assertTrue(page1.size <= 5)
+        assertTrue(src.smsCount(ids, RowFilter()) >= page1.size)
+        val last = page1.last()
+        val page2 = src.sms(ids, RowFilter(), limit = 5, before = PageKey(last.dateMs, last.id))
+        val page1Ids = page1.map { it.id }.toSet()
+        assertTrue(page2.none { it.id in page1Ids })
+        val newestMms = src.mms(ids, RowFilter(), 50, null)
+        val addrs = src.addrs(newestMms.map { it.id })
+        assertTrue(addrs.values.flatten().any { it.type == 137 && it.address.isNotBlank() })
+    }
 }

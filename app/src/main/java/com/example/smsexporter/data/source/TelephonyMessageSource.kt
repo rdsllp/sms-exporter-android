@@ -57,12 +57,12 @@ class TelephonyMessageSource(private val resolver: ContentResolver) : MessageSou
         out
     }
 
-    override suspend fun sms(threadIds: Collection<Long>, where: RowFilter, limit: Int, beforeMs: Long?): List<RawSms> =
+    override suspend fun sms(threadIds: Collection<Long>, where: RowFilter, limit: Int, before: PageKey?): List<RawSms> =
         withContext(Dispatchers.IO) {
             if (threadIds.isEmpty() || limit <= 0) return@withContext emptyList()
             val out = ArrayList<RawSms>()
             for (chunk in threadIds.distinct().chunked(CHUNK)) {
-                val (sel, args) = smsSelection(chunk, where, beforeMs)
+                val (sel, args) = smsSelection(chunk, where, before)
                 resolver.query(SMS_URI, SMS_COLUMNS, sel, args, "date DESC, _id DESC LIMIT $limit")?.use { c ->
                     while (c.moveToNext()) out += c.toRawSms()
                 }
@@ -80,11 +80,11 @@ class TelephonyMessageSource(private val resolver: ContentResolver) : MessageSou
         total
     }
 
-    override suspend fun mms(threadIds: Collection<Long>, where: RowFilter, limit: Int, beforeMs: Long?): List<RawMms> =
+    override suspend fun mms(threadIds: Collection<Long>, where: RowFilter, limit: Int, before: PageKey?): List<RawMms> =
         withContext(Dispatchers.IO) {
             if (threadIds.isEmpty() || limit <= 0) return@withContext emptyList()
             val out = ArrayList<RawMms>()
-            forEachMmsQuery(threadIds, where, beforeMs) { sel, args, threadSet ->
+            forEachMmsQuery(threadIds, where, before) { sel, args, threadSet ->
                 // With a thread set, thread filtering happens in memory, so a SQL LIMIT could be
                 // used up by rows from other threads; only limit in SQL when SQL does the filtering.
                 val order = if (threadSet == null) "date DESC, _id DESC LIMIT $limit" else "date DESC, _id DESC"
@@ -145,22 +145,22 @@ class TelephonyMessageSource(private val resolver: ContentResolver) : MessageSou
     }
 
     override suspend fun addrs(mmsIds: Collection<Long>): Map<Long, List<RawAddr>> = withContext(Dispatchers.IO) {
-        // Addresses are only exposed per message (content://mms/<id>/addr).
-        val out = HashMap<Long, List<RawAddr>>()
-        for (msgId in mmsIds.distinct()) {
-            val rows = ArrayList<RawAddr>()
+        val out = HashMap<Long, MutableList<RawAddr>>()
+        for (chunk in mmsIds.distinct().chunked(CHUNK)) {
             resolver.query(
-                Uri.parse("content://mms/$msgId/addr"),
-                arrayOf("msg_id", "address", "type"), null, null, null,
+                ADDR_URI,
+                arrayOf("_id", "msg_id", "address", "type"),
+                "msg_id IN (${chunk.joinToString(",")})", null, "msg_id, _id",
             )?.use { c ->
+                val msgId = c.getColumnIndexOrThrow("msg_id")
                 val addr = c.getColumnIndexOrThrow("address")
                 val type = c.getColumnIndexOrThrow("type")
                 while (c.moveToNext()) {
                     val a = c.getStringOrNull(addr) ?: continue
-                    rows += RawAddr(msgId = msgId, address = a, type = c.getInt(type))
+                    val row = RawAddr(msgId = c.getLong(msgId), address = a, type = c.getInt(type))
+                    out.getOrPut(row.msgId) { ArrayList() } += row
                 }
             }
-            if (rows.isNotEmpty()) out[msgId] = rows
         }
         out
     }
@@ -170,13 +170,16 @@ class TelephonyMessageSource(private val resolver: ContentResolver) : MessageSou
 
     // ---- selection building ----
 
-    private fun smsSelection(threadChunk: List<Long>, where: RowFilter, beforeMs: Long?): Pair<String, Array<String>> {
+    private fun smsSelection(threadChunk: List<Long>, where: RowFilter, before: PageKey?): Pair<String, Array<String>> {
         val clauses = mutableListOf("thread_id IN (${threadChunk.joinToString(",")})")
         val args = mutableListOf<String>()
         where.startMs?.let { clauses += "date >= ?"; args += it.toString() }
         where.endMs?.let { clauses += "date <= ?"; args += it.toString() }
-        beforeMs?.let { clauses += "date < ?"; args += it.toString() }
-        where.bodyContains?.let { clauses += "body LIKE ?"; args += "%$it%" }
+        before?.let {
+            clauses += "(date < ? OR (date = ? AND _id < ?))"
+            args += listOf(it.dateMs.toString(), it.dateMs.toString(), it.id.toString())
+        }
+        where.bodyContains?.let { clauses += "body LIKE ? ESCAPE '\\'"; args += likeContains(it) }
         return clauses.joinToString(" AND ") to args.toTypedArray()
     }
 
@@ -189,14 +192,19 @@ class TelephonyMessageSource(private val resolver: ContentResolver) : MessageSou
     private inline fun forEachMmsQuery(
         threadIds: Collection<Long>,
         where: RowFilter,
-        beforeMs: Long?,
+        before: PageKey?,
         block: (sel: String, args: Array<String>, threadSet: Set<Long>?) -> Unit,
     ) {
         val dateClauses = mutableListOf<String>()
         val dateArgs = mutableListOf<String>()
         where.startMs?.let { dateClauses += "date >= ?"; dateArgs += ceilSeconds(it).toString() }
         where.endMs?.let { dateClauses += "date <= ?"; dateArgs += Math.floorDiv(it, 1000L).toString() }
-        beforeMs?.let { dateClauses += "date < ?"; dateArgs += ceilSeconds(it).toString() }
+        before?.let {
+            // MMS dateMs values are whole seconds (date * 1000), so this division is exact.
+            val sec = (it.dateMs / 1000L).toString()
+            dateClauses += "(date < ? OR (date = ? AND _id < ?))"
+            dateArgs += listOf(sec, sec, it.id.toString())
+        }
 
         val term = where.bodyContains
         if (term == null) {
@@ -216,7 +224,7 @@ class TelephonyMessageSource(private val resolver: ContentResolver) : MessageSou
 
     private fun matchingTextMids(term: String): List<Long> {
         val mids = LinkedHashSet<Long>()
-        resolver.query(PART_URI, arrayOf("mid"), "ct = 'text/plain' AND text LIKE ?", arrayOf("%$term%"), null)?.use { c ->
+        resolver.query(PART_URI, arrayOf("mid"), "ct = 'text/plain' AND text LIKE ? ESCAPE '\\'", arrayOf(likeContains(term)), null)?.use { c ->
             val mid = c.getColumnIndexOrThrow("mid")
             while (c.moveToNext()) mids += c.getLong(mid)
         }
@@ -251,12 +259,17 @@ class TelephonyMessageSource(private val resolver: ContentResolver) : MessageSou
         private val SMS_URI: Uri = Uri.parse("content://sms")
         private val MMS_URI: Uri = Uri.parse("content://mms")
         private val PART_URI: Uri = Uri.parse("content://mms/part")
+        private val ADDR_URI: Uri = Uri.parse("content://mms/addr")
         private val SMS_COLUMNS = arrayOf("_id", "thread_id", "address", "type", "date", "body")
         private val MMS_COLUMNS = arrayOf("_id", "thread_id", "msg_box", "date", "tr_id", "ct_t", "text_only")
 
         /** Parses the space-separated `recipient_ids` column; blank/NULL gives an empty list. */
         internal fun parseRecipientIds(raw: String?): List<Long> =
             raw?.trim()?.split(' ')?.mapNotNull { it.trim().toLongOrNull() } ?: emptyList()
+
+        /** `%term%` with `\`, `%` and `_` escaped, for use with `LIKE ? ESCAPE '\'`. */
+        internal fun likeContains(term: String): String =
+            "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
 
         private fun ceilSeconds(ms: Long): Long = Math.floorDiv(ms + 999L, 1000L)
     }
