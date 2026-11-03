@@ -3,6 +3,7 @@ package com.example.smsexporter.ui
 import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -25,9 +26,12 @@ fun AppNav() {
             // the list's filter (date range, attachments, kind) when this conversation was opened
             val filter = remember(entry) { app.listFilter.value.copy(query = null) }
             // the list's order when this conversation was opened, for swiping between conversations;
-            // just this one when there is no list order (deep link, process death) or it lacks the key
-            val keys = remember(entry) { app.listOrder.value.takeIf { key in it } ?: listOf(key) }
-            val start = remember(entry) { keys.indexOf(key).coerceAtLeast(0) }
+            // just this one when there is no list order (deep link) or it lacks the key. Saved, so a
+            // restore after process death (when listOrder is empty again) gets the same pages back.
+            val keys: ArrayList<String> = rememberSaveable(entry) {
+                ArrayList(app.listOrder.value.takeIf { key in it } ?: listOf(key))
+            }
+            val start = rememberSaveable(entry) { keys.indexOf(key) } // present: see the fallback above
             ConversationScreen(keys = keys, startIndex = start, initialFilter = filter, onBack = { nav.popBackStack() })
         }
     }

@@ -113,6 +113,8 @@ class ConversationListViewModelTest {
         vm.setSort(SortOrder.NAME_ASC)
         advanceUntilIdle()
         assertEquals(vm.state.value.conversations.map { it.key }, order)
+        // titles "+911111111111, +912222222222", "JD-AxisBk", "Priya"
+        assertEquals(listOf("num:1111111111|num:2222222222", "raw:jd-axisbk", "num:9876543210"), order)
     }
 
     @Test fun secondRefreshWinsOverStaleKindFill() = runTest(dispatcher) {

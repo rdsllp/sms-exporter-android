@@ -64,11 +64,18 @@ fun RevealOnDrag(details: @Composable () -> Unit, modifier: Modifier = Modifier,
                 val target = x
                 scope.launch { offset.snapTo(target) }
             }
-            val start = awaitHorizontalTouchSlopOrCancellation(down.id) { change, over ->
-                if (over < 0f || x < 0f) { change.consume(); move(over) }
-            } ?: return@awaitEachGesture
-            horizontalDrag(start.id) { change -> move(change.positionChange().x); change.consume() }
-            scope.launch { offset.animateTo(0f, spring(stiffness = Spring.StiffnessMedium)) }
+            try {
+                val start = awaitHorizontalTouchSlopOrCancellation(down.id) { change, over ->
+                    if (over < 0f || x < 0f) { change.consume(); move(over) }
+                } ?: return@awaitEachGesture
+                horizontalDrag(start.id) { change -> move(change.positionChange().x); change.consume() }
+            } finally {
+                // also when this pointer coroutine is cancelled (node reset, density change), so a
+                // bubble is never left open; a no-op when the composable itself is gone (scope cancelled)
+                if (x < 0f || offset.value < 0f) {
+                    scope.launch { offset.animateTo(0f, spring(stiffness = Spring.StiffnessMedium)) }
+                }
+            }
         }
     }
 

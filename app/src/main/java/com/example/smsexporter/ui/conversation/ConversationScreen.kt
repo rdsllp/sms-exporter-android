@@ -72,11 +72,14 @@ private fun ConversationPager(
     vmFor: @Composable (Int) -> ConversationViewModel,
     onBack: () -> Unit,
 ) {
-    val vm = vmFor(pager.currentPage)
+    // PagerState restores its saved page without checking it against the page count (measure clamps
+    // it later), so clamp before indexing during composition
+    val page = pager.currentPage.coerceIn(0, pager.pageCount - 1)
+    val vm = vmFor(page)
     val state by vm.state.collectAsStateWithLifecycle()
     // per page: a page whose search is active shows it again when it becomes current
-    var searchOpen by rememberSaveable(pageKey(pager.currentPage)) { mutableStateOf(vm.state.value.filter.query != null) }
-    var text by rememberSaveable(pageKey(pager.currentPage)) { mutableStateOf(vm.state.value.filter.query.orEmpty()) }
+    var searchOpen by rememberSaveable(pageKey(page)) { mutableStateOf(vm.state.value.filter.query != null) }
+    var text by rememberSaveable(pageKey(page)) { mutableStateOf(vm.state.value.filter.query.orEmpty()) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val closeSearch = { searchOpen = false; text = ""; vm.setSearch(null) }
