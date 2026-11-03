@@ -5,7 +5,11 @@ import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
+import com.example.smsexporter.data.MessageFilter
+import com.example.smsexporter.data.MessageRepository
+import com.example.smsexporter.data.NameLookup
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -44,5 +48,18 @@ import org.junit.runner.RunWith
         val newestMms = src.mms(ids, RowFilter(), 50, null)
         val addrs = src.addrs(newestMms.map { it.id })
         assertTrue(addrs.values.flatten().any { it.type == 137 && it.address.isNotBlank() })
+    }
+    @Test fun repositoryMergesAndPagesQuickly() = runBlocking {
+        val repo = MessageRepository(src, NameLookup { _, _ -> null })
+        val t0 = System.nanoTime()
+        val conversations = repo.conversations()
+        val convMs = (System.nanoTime() - t0) / 1_000_000
+        assertTrue(conversations.size < src.threads().size)
+        assertEquals(conversations.size, conversations.map { it.key }.toSet().size)
+        val t1 = System.nanoTime()
+        val page = repo.page(conversations.first(), MessageFilter(), null)
+        val pageMs = (System.nanoTime() - t1) / 1_000_000
+        Log.i("TelephonyMessageSourceTest", "conversations=${conversations.size} conversationsMs=$convMs page=${page.size} pageMs=$pageMs")
+        assertTrue("page took ${pageMs}ms", pageMs < 300)
     }
 }
