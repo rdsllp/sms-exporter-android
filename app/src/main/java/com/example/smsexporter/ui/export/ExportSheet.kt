@@ -60,9 +60,10 @@ fun ExportSheet(state: ExportUiState.Choosing, onExport: (ExportFormat) -> Unit,
 
 /** What the export will produce, as the coordinator decides it. */
 private fun outputHint(format: ExportFormat, count: Int): String = when {
-    format == ExportFormat.CSV || format == ExportFormat.JSON -> "ZIP with original attachments"
-    count > 1 -> "ZIP with one ${format.name} per conversation"
-    else -> "Single ${format.name} file"
+    format == ExportFormat.CSV || format == ExportFormat.JSON ->
+        "Single file, or a ZIP when there are attachments or several conversations"
+    count > 1 -> "ZIP with one file per conversation"
+    else -> "Single file"
 }
 
 /** "3 conversations · 1 Jan 2026 – 31 Oct 2026", or "· all messages" when [filter] is inactive. */
