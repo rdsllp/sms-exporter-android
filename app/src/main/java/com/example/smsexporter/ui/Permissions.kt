@@ -32,13 +32,16 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 
 private val PERMISSIONS = arrayOf(Manifest.permission.READ_SMS, Manifest.permission.READ_CONTACTS)
+private const val PREFS = "permissions"
+private const val KEY_CONTACTS_ASKED = "contacts_asked"
 
 private fun Context.granted(permission: String) =
     ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
 /**
  * Shows [content] once READ_SMS is granted. Asks for READ_SMS and READ_CONTACTS together after
- * an explanation; when READ_CONTACTS alone is refused the app continues without names. When
+ * an explanation; when READ_CONTACTS alone is refused the app continues without names, on this
+ * and every later launch (remembered in SharedPreferences). When
  * READ_SMS is refused the explanation offers the app's system settings page instead.
  */
 @Composable
@@ -46,9 +49,14 @@ fun PermissionGate(content: @Composable () -> Unit) {
     val context = LocalContext.current
     var smsGranted by remember { mutableStateOf(context.granted(Manifest.permission.READ_SMS)) }
     var contactsGranted by remember { mutableStateOf(context.granted(Manifest.permission.READ_CONTACTS)) }
+    val prefs = remember { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
+    // persisted: once contacts were asked for (granted or refused), later launches skip the gate
+    var contactsAskedOnce by remember { mutableStateOf(prefs.getBoolean(KEY_CONTACTS_ASKED, false)) }
     var asked by rememberSaveable { mutableStateOf(false) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         asked = true
+        contactsAskedOnce = true
+        prefs.edit().putBoolean(KEY_CONTACTS_ASKED, true).apply()
         smsGranted = context.granted(Manifest.permission.READ_SMS)
         contactsGranted = context.granted(Manifest.permission.READ_CONTACTS)
     }
@@ -59,7 +67,7 @@ fun PermissionGate(content: @Composable () -> Unit) {
         onPauseOrDispose { }
     }
 
-    if (smsGranted && (contactsGranted || asked)) {
+    if (smsGranted && (contactsGranted || contactsAskedOnce)) {
         content()
         return
     }

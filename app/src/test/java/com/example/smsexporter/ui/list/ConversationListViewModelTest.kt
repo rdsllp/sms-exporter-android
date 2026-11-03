@@ -13,8 +13,10 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -82,7 +84,10 @@ class ConversationListViewModelTest {
     @Test fun queryMatchesTitleAndAddress() = runTest(dispatcher) {
         val vm = loadedVm()
         vm.setQuery("AXIS")                     // title (sender id), case-insensitive
-        advanceUntilIdle()
+        advanceTimeBy(100)                      // still inside the 150 ms debounce
+        assertEquals(3, vm.titles().size)
+        advanceTimeBy(60)
+        runCurrent()
         assertEquals("AXIS", vm.state.value.query)
         assertEquals(listOf("JD-AxisBk"), vm.titles())
         vm.setQuery("98765")                    // raw address of "Priya", not in the title
@@ -100,6 +105,18 @@ class ConversationListViewModelTest {
         vm.setQuery("")
         advanceUntilIdle()
         assertEquals(3, vm.titles().size)
+    }
+
+    @Test fun secondRefreshWinsOverStaleKindFill() = runTest(dispatcher) {
+        val repo = MessageRepository(source, names)
+        val vm = ConversationListViewModel(repo, dispatcher, log = {})
+        vm.refresh()
+        vm.refresh()                            // cancels the earlier ones before they publish
+        advanceUntilIdle()
+        val latest = repo.conversations()       // the cache: the last refresh's list, kinds filled
+        assertTrue(vm.state.value.conversations.all { c -> latest.any { it === c } })
+        assertEquals(3, vm.state.value.conversations.size)
+        assertTrue(vm.state.value.conversations.all { it.lastKind != null })
     }
 
     @Test fun toggleSelectionEntersAndLeavesSelectionMode() = runTest(dispatcher) {

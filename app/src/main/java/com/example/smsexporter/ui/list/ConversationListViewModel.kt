@@ -9,6 +9,7 @@ import com.example.smsexporter.data.model.Conversation
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,6 +57,7 @@ class ConversationListViewModel(
     private val selected = MutableStateFlow<Set<String>>(emptySet())
 
     private var loadedOnce = false
+    private var refreshJob: Job? = null
     @Volatile private var refreshStartNs = 0L
     @Volatile private var firstStateLogged = false
 
@@ -74,6 +76,7 @@ class ConversationListViewModel(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
+                    Log.w("ListVm", "body search failed", e)
                     emptySet()
                 }
                 emit(Search(q, keys))
@@ -115,20 +118,26 @@ class ConversationListViewModel(
     fun toggleSelected(key: String) = selected.update { if (key in it) it - key else it + key }
     fun clearSelection() { selected.value = emptySet() }
 
-    /** Loads the conversations (re-reading the provider after the first time), then fills kind tags. */
+    /**
+     * Loads the conversations (re-reading the provider after the first time), then fills kind
+     * tags. A new call cancels a running one; a kind fill is dropped if a newer list was published.
+     */
     fun refresh() {
         refreshStartNs = System.nanoTime()
         firstStateLogged = false
         val reload = loadedOnce
         loadedOnce = true
-        viewModelScope.launch(dispatcher) {
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch(dispatcher) {
             try {
-                all.value = repo.conversations(refresh = reload)
-                all.value = repo.fillLastKinds()
+                val list = repo.conversations(refresh = reload)
+                all.value = list
+                val filled = repo.fillLastKinds()
+                if (all.value === list) all.value = filled
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                log("refresh failed: $e")
+                Log.w("ListVm", "load failed", e)
                 if (all.value == null) all.value = emptyList()
             }
         }
