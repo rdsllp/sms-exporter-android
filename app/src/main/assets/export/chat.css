@@ -34,7 +34,12 @@ body {
   background: #e2e2e6; color: #333; border-radius: 12px;
 }
 .empty { text-align: center; font-style: italic; color: #666; margin: 40px 0; }
-@page { size: A4; margin: 16mm; }
+/* Page numbers in the PDF footer. A running title header via string-set/string() is not
+   supported by Android WebView (checked on WebView 140), so there is none. */
+@page {
+  size: A4; margin: 16mm;
+  @bottom-center { content: counter(page) " / " counter(pages); font-size: 10px; color: #666; }
+}
 @media print {
   body { max-width: none; padding: 0; }
   .day { page-break-after: avoid; }
