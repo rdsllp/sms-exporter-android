@@ -122,10 +122,8 @@ class ExportCoordinator(
 
     /** Puts `<folder>/EXPORT_FAILED.txt` in place of a conversation that could not be exported. */
     private fun writeFailureNote(sink: ExportSink, folder: String, c: Conversation, e: Exception) {
-        val text = "This conversation could not be exported.\n\n" +
-            "Conversation: ${c.title}\n" +
-            "Error: ${e.message ?: e::class.simpleName}\n\n" +
-            "Any other file in this folder may be incomplete.\n"
+        val text = "Export of \"${c.title}\" failed: ${e.message ?: e::class.simpleName}\n" +
+            "Other files in this folder may be incomplete.\n"
         sink.open("$folder/$FAILED_NOTE", "text/plain").use { it.write(text.toByteArray(Charsets.UTF_8)) }
     }
 

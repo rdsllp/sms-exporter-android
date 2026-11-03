@@ -249,7 +249,10 @@ class ExportCoordinatorTest {
         assertTrue(paths.toString(), h.sink.text("$folderA/$folderA.pdf").startsWith("%PDF-fake <!doctype html>"))
         assertTrue(paths.toString(), h.sink.text("$folderA2/$folderA2.pdf").startsWith("%PDF-fake <!doctype html>"))
         val note = h.sink.text("$folderB/EXPORT_FAILED.txt")
-        assertTrue(note, note.contains(b) && note.contains("printer jammed"))
+        assertEquals(
+            listOf("Export of \"$b\" failed: printer jammed", "Other files in this folder may be incomplete."),
+            note.lines().filter { it.isNotEmpty() },
+        )
         assertEquals("text/plain", h.sink.mimes.getValue("$folderB/EXPORT_FAILED.txt"))
         assertTrue(h.sink.finished)
         assertFalse(h.sink.aborted)
