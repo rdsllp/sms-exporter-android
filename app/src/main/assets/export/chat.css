@@ -22,6 +22,7 @@ body {
 .sender { font-size: 12px; font-weight: 600; color: #444; margin-bottom: 2px; }
 .meta { font-size: 11px; color: #777; margin-top: 4px; }
 .bubble img { display: block; max-width: 100%; height: auto; border-radius: 8px; margin: 4px 0; }
+.bubble img.poster { opacity: 0.95; }
 .react {
   display: inline-block; margin: 4px 4px 0 0; padding: 0 6px; font-size: 13px;
   background: #fff; border: 1px solid #ccc; border-radius: 10px;
@@ -43,6 +44,6 @@ body {
 @media print {
   body { max-width: none; padding: 0; }
   .day { page-break-after: avoid; }
-  .bubble img { max-width: 70%; }
+  .bubble img, .bubble img.poster { max-width: 70%; }
   .bubble, .card { page-break-inside: avoid; }
 }

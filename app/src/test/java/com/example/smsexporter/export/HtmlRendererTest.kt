@@ -75,6 +75,22 @@ class HtmlRendererTest {
     }
 
     @Test
+    fun videoPosterRenderedWhenAvailable() {
+        val video = Attachment(9, "video/mp4", "clip.mp4", 10)
+        val html = render(listOf(msg(1, attachments = listOf(video))), image = { "data:image/jpeg;base64,PPP" })
+        assertTrue(html, html.contains("<img class=\"poster\" src=\"data:image/jpeg;base64,PPP\" alt=\"video\"><span class=\"chip\">[video clip.mp4]</span>"))
+    }
+
+    @Test
+    fun videoWithoutPosterShowsChipOnly() {
+        val video = Attachment(9, "video/mp4", "clip.mp4", 10)
+        val html = render(listOf(msg(1, attachments = listOf(video))), image = { null })
+        assertFalse(html, html.contains("class=\"poster\""))
+        assertFalse(html, html.contains("[photo missing]"))
+        assertTrue(html, html.contains("<span class=\"chip\">[video clip.mp4]</span>"))
+    }
+
+    @Test
     fun reactionBadgeInsideTargetBubble() {
         val target = msg(1, body = "dinner?", dir = Direction.SENT)
         val react = msg(

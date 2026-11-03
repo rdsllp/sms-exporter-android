@@ -115,6 +115,44 @@ class ExportCoordinatorTest {
         ExportRequest(keys, format, filter)
 
     @Test
+    fun videoPosterLambdaIsUsedForVideos() = runTest {
+        val videoBytes = byteArrayOf(5, 5, 5)
+        val r = MessageRepository(
+            FakeMessageSource(
+                sms = emptyList(),
+                mms = listOf(RawMms(2, 1, 1, 2_000, "T2", related, false)),
+                parts = listOf(RawPart(22, 2, "video/mp4", "clip.mp4", null, "/x/clip.mp4")),
+                addrs = listOf(RawAddr(2, a, 137)),
+                partBytes = mapOf(22L to videoBytes),
+            ),
+            NameLookup { _, _ -> null },
+            log = {},
+        )
+        val posterCalls = mutableListOf<Long>()
+        val scaled = mutableListOf<ByteArray>()
+        val sink = FakeSink()
+        val c = ExportCoordinator(
+            repo = r,
+            html = HtmlRenderer(""),
+            pdf = { _, _ -> },
+            sinkFactory = { sink },
+            clock = { now },
+            cacheDir = tmp.root,
+            scale = { scaled += it; "data:image/jpeg;base64,SCALED" },
+            poster = { posterCalls += it.partId; "data:image/jpeg;base64,POSTER" },
+            attachments = AttachmentExporter(r, {}),
+            dispatcher = UnconfinedTestDispatcher(testScheduler),
+            log = {},
+        )
+        c.run(request(listOf(keyOf(r, a)), ExportFormat.HTML)).toList()
+        assertEquals(listOf(22L), posterCalls)
+        assertTrue("scale must not see video bytes", scaled.isEmpty())
+        val html = sink.text("$folderA.html")
+        assertTrue(html, html.contains("<img class=\"poster\" src=\"data:image/jpeg;base64,POSTER\" alt=\"video\">"))
+        assertTrue(html, html.contains("[video clip.mp4]"))
+    }
+
+    @Test
     fun singlePdfGoesToSingleFile() = runTest {
         val r = repo()
         val h = harness(r)

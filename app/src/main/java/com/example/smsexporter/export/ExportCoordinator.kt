@@ -54,6 +54,8 @@ class ExportCoordinator(
     /** Where the PDF path writes its temporary HTML file. */
     private val cacheDir: File,
     private val scale: (ByteArray) -> String? = ImageScaler::toDataUri,
+    /** A video's poster frame as a data URI, or null (see [VideoPoster]). */
+    private val poster: (Attachment) -> String? = { null },
     private val attachments: AttachmentExporter = AttachmentExporter(repo),
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val log: (String) -> Unit = { Log.w("Export", it) },
@@ -182,9 +184,12 @@ class ExportCoordinator(
             }
         }
 
-    /** Only an [Exception] means "photo missing"; an OutOfMemoryError must fail the export loudly. */
+    /**
+     * A data URI for an attachment: a video's poster frame, or a scaled photo. Only an [Exception]
+     * means "photo missing"; an OutOfMemoryError must fail the export loudly.
+     */
     private fun inlineImage(a: Attachment): String? =
-        try {
+        if (a.isVideo) poster(a) else try {
             repo.openAttachment(a)?.use { it.readBytes() }?.let(scale)
         } catch (e: Exception) {
             log("inline image ${a.partId} failed: $e")

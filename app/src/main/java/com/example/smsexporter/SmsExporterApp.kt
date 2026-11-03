@@ -13,6 +13,7 @@ import com.example.smsexporter.export.DownloadsSink
 import com.example.smsexporter.export.ExportCoordinator
 import com.example.smsexporter.export.HtmlRenderer
 import com.example.smsexporter.export.PdfPrinter
+import com.example.smsexporter.export.VideoPoster
 import com.example.smsexporter.export.ZipSink
 import java.time.ZonedDateTime
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,6 +36,7 @@ class SmsExporterApp : Application(), ImageLoaderFactory {
             sinkFactory = { name -> if (name == null) DownloadsSink(contentResolver) else ZipSink(contentResolver, name) },
             clock = { ZonedDateTime.now() },
             cacheDir = cacheDir,
+            poster = VideoPoster(this)::frameDataUri,
         )
     }
 

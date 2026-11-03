@@ -27,7 +27,7 @@ object ImageScaler {
         ) ?: return null
         val oriented = orient(decoded, orientationOf(bytes))
         try {
-            return scaledJpeg(oriented, maxEdgePx, quality)
+            return bitmapToDataUri(oriented, maxEdgePx, quality)
         } finally {
             oriented.recycle()
         }
@@ -60,8 +60,11 @@ object ImageScaler {
         return out
     }
 
-    /** Downscales [src] to [maxEdgePx] on the long edge and returns a JPEG data URI. Does not recycle [src]. */
-    private fun scaledJpeg(src: Bitmap, maxEdgePx: Int, quality: Int): String {
+    /**
+     * Downscales [src] to [maxEdgePx] on the long edge and returns a JPEG data URI (transparency on
+     * white). Does not recycle [src].
+     */
+    fun bitmapToDataUri(src: Bitmap, maxEdgePx: Int = 1600, quality: Int = 85): String {
         var scaled: Bitmap = src
         try {
             val edge = maxOf(src.width, src.height)

@@ -170,7 +170,14 @@ class HtmlRenderer(
     private fun attachment(sb: Appendable, a: Attachment, image: (Attachment) -> String?) {
         when {
             a.isImage -> imageOrChip(sb, a, image)
-            a.isVideo -> chip(sb, "[video ${a.fileName ?: "video"}]")
+            a.isVideo -> {
+                image(a)?.let { uri ->
+                    sb.append("<img class=\"poster\" src=\"")
+                    appendEscaped(sb, uri)
+                    sb.append("\" alt=\"video\">")
+                }
+                chip(sb, "[video ${a.fileName ?: "video"}]")
+            }
             else -> chip(sb, "[${a.fileName ?: a.mimeType}]")
         }
     }
