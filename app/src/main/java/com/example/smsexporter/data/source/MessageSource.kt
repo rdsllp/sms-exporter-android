@@ -1,5 +1,6 @@
 package com.example.smsexporter.data.source
 
+import com.example.smsexporter.data.model.MessageKind
 import java.io.InputStream
 
 /** A row of `content://mms-sms/conversations?simple=true`. `dateMs` is milliseconds. */
@@ -26,6 +27,9 @@ data class RawAddr(val msgId: Long, val address: String, val type: Int)   // 137
 /** Paging cursor: the `(dateMs, id)` of the last row of the previous page. */
 data class PageKey(val dateMs: Long, val id: Long)
 
+/** Date and kind of the newest row of a thread across both tables. `dateMs` is milliseconds. */
+data class ThreadNewest(val dateMs: Long, val kind: MessageKind)
+
 data class RowFilter(val startMs: Long? = null, val endMs: Long? = null, val bodyContains: String? = null)
 
 /**
@@ -46,4 +50,7 @@ interface MessageSource {
     suspend fun smsCount(threadIds: Collection<Long>, where: RowFilter): Int
     suspend fun mmsCount(threadIds: Collection<Long>, where: RowFilter): Int
     fun openPart(partId: Long): InputStream?
+
+    /** Newest row per thread id across sms and mms (mms wins a same-millisecond tie), from one scan per table. */
+    suspend fun newestPerThread(): Map<Long, ThreadNewest>
 }

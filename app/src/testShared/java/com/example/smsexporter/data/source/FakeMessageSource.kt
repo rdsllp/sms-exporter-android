@@ -1,5 +1,6 @@
 package com.example.smsexporter.data.source
 
+import com.example.smsexporter.data.model.MessageKind
 import java.io.InputStream
 
 /**
@@ -57,6 +58,18 @@ class FakeMessageSource(
     override suspend fun mmsCount(threadIds: Collection<Long>, where: RowFilter): Int = mmsMatching(threadIds, where).size
 
     override fun openPart(partId: Long): InputStream? = partBytes[partId]?.inputStream()
+
+    override suspend fun newestPerThread(): Map<Long, ThreadNewest> {
+        val out = HashMap<Long, ThreadNewest>()
+        mms.forEach { m ->
+            val kind = if (m.trId?.startsWith("proto:") == true) MessageKind.RCS else MessageKind.MMS
+            if ((out[m.threadId]?.dateMs ?: Long.MIN_VALUE) < m.dateMs) out[m.threadId] = ThreadNewest(m.dateMs, kind)
+        }
+        sms.forEach { s ->
+            if ((out[s.threadId]?.dateMs ?: Long.MIN_VALUE) < s.dateMs) out[s.threadId] = ThreadNewest(s.dateMs, MessageKind.SMS)
+        }
+        return out
+    }
 
     // ---- filtering ----
 

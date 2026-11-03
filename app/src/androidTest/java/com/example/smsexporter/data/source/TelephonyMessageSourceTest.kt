@@ -57,9 +57,16 @@ import org.junit.runner.RunWith
         assertTrue(conversations.size < src.threads().size)
         assertEquals(conversations.size, conversations.map { it.key }.toSet().size)
         val t1 = System.nanoTime()
+        val filled = repo.fillLastKinds()
+        val fillMs = (System.nanoTime() - t1) / 1_000_000
+        val withKind = filled.count { it.lastKind != null }
+        val t2 = System.nanoTime()
         val page = repo.page(conversations.first(), MessageFilter(), null)
-        val pageMs = (System.nanoTime() - t1) / 1_000_000
-        Log.i("TelephonyMessageSourceTest", "conversations=${conversations.size} conversationsMs=$convMs page=${page.size} pageMs=$pageMs")
+        val pageMs = (System.nanoTime() - t2) / 1_000_000
+        Log.i("TelephonyMessageSourceTest", "conversations=${conversations.size} conversationsMs=$convMs fillLastKindsMs=$fillMs withKind=$withKind page=${page.size} pageMs=$pageMs")
+        assertTrue("conversations took ${convMs}ms", convMs < 1000)
+        assertTrue("fillLastKinds took ${fillMs}ms", fillMs < 2000)
+        assertTrue("only $withKind of ${filled.size} have lastKind", withKind * 10 >= filled.size * 9)
         assertTrue("page took ${pageMs}ms", pageMs < 300)
     }
 }

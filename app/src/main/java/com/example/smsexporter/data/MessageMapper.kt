@@ -42,7 +42,7 @@ internal class MessageMapper(private val source: MessageSource) {
         return rows.map { r -> mms(r, partsById[r.id].orEmpty(), addrsById[r.id].orEmpty()) }
     }
 
-    fun kindOf(r: RawMms): MessageKind =
+    private fun kindOf(r: RawMms): MessageKind =
         if (r.trId?.startsWith(RCS_TR_ID_PREFIX) == true) MessageKind.RCS else MessageKind.MMS
 
     private suspend fun mms(r: RawMms, parts: List<RawPart>, addrs: List<RawAddr>): Message {

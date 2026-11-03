@@ -7,8 +7,10 @@ import com.example.smsexporter.data.source.RawAddr
 import com.example.smsexporter.data.source.RawMms
 import com.example.smsexporter.data.source.RawPart
 import com.example.smsexporter.data.source.RawSms
+import com.example.smsexporter.data.source.RawThread
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -73,6 +75,31 @@ class MessageRepositoryTest {
         val second = repo.page(conv, MessageFilter(), PageCursor.of(first.last()), limit = 2)
         assertEquals(listOf("mms:3", "mms:2", "mms:1", "sms:9"), (first + second).map { it.id.toString() })
         assertEquals(listOf("mms:3", "mms:2", "mms:1", "sms:9"), repo.all(conv, MessageFilter()).map { it.id.toString() })
+    }
+
+    @Test fun fillLastKindsUsesNewestRowAcrossMergedThreads() = runTest {
+        // threads 10 and 11 share one participant, so they merge; thread 10 is the "older"
+        // thread by its thread date but holds the newest row (an RCS one). Thread 12 has no rows.
+        val fake = FakeMessageSource(
+            sms = listOf(RawSms(1, 11, "+914444444444", 1, 2000, "sms")),
+            mms = listOf(RawMms(2, 10, 1, 3000, "proto:x", related, true)),
+            parts = emptyList(),
+            addrs = emptyList(),
+            threads = listOf(
+                RawThread(10, listOf(1), 100, 1, null, false),
+                RawThread(11, listOf(1), 200, 1, null, false),
+                RawThread(12, listOf(2), 50, 0, null, false),
+            ),
+            canonical = mapOf(1L to "+914444444444", 2L to "+915555555555"),
+        )
+        val repo = MessageRepository(fake, noNames)
+        assertTrue(repo.conversations().all { it.lastKind == null })
+        val filled = repo.fillLastKinds()
+        assertEquals(2, filled.size)
+        val merged = filled.single { it.threadIds.size == 2 }
+        assertEquals(MessageKind.RCS, merged.lastKind)
+        assertNull(filled.single { it.threadIds == listOf(12L) }.lastKind)
+        assertEquals(filled, repo.conversations())   // cached
     }
 
     @Test fun describeFilter() {
