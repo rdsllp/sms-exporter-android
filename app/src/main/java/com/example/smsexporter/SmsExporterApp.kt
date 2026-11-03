@@ -9,6 +9,12 @@ import com.example.smsexporter.data.MessageFilter
 import com.example.smsexporter.data.MessageRepository
 import com.example.smsexporter.data.source.TelephonyMessageSource
 import com.example.smsexporter.diag.CrashLog
+import com.example.smsexporter.export.DownloadsSink
+import com.example.smsexporter.export.ExportCoordinator
+import com.example.smsexporter.export.HtmlRenderer
+import com.example.smsexporter.export.PdfPrinter
+import com.example.smsexporter.export.ZipSink
+import java.time.ZonedDateTime
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
@@ -19,6 +25,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 class SmsExporterApp : Application(), ImageLoaderFactory {
     val contacts: ContactResolver by lazy { ContactResolver(contentResolver) }
     val repository: MessageRepository by lazy { MessageRepository(TelephonyMessageSource(contentResolver), contacts) }
+
+    /** Exports conversations to Downloads; shared by the list's and the chat's export view models. */
+    val exportCoordinator: ExportCoordinator by lazy {
+        ExportCoordinator(
+            repository,
+            HtmlRenderer(assets.open("export/chat.css").bufferedReader().use { it.readText() }),
+            pdf = PdfPrinter(this)::print,
+            sinkFactory = { name -> if (name == null) DownloadsSink(contentResolver) else ZipSink(contentResolver, name) },
+            clock = { ZonedDateTime.now() },
+        )
+    }
 
     /** The conversation list's current filter; a conversation opened from the list starts with it. */
     val listFilter = MutableStateFlow(MessageFilter())

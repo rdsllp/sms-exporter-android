@@ -19,7 +19,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -33,8 +32,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.smsexporter.SmsExporterApp
+import com.example.smsexporter.data.forConversation
 import com.example.smsexporter.data.model.Conversation
-import kotlinx.coroutines.launch
+import com.example.smsexporter.ui.export.ExportSheets
+import com.example.smsexporter.ui.export.ExportViewModel
+import com.example.smsexporter.ui.export.listScopeLine
 
 /**
  * The merged conversation list with search, filter chips, sort and multi-select. Reloads on
@@ -55,6 +57,7 @@ fun ConversationListScreen(onOpen: (key: String) -> Unit, onDeviceCheck: () -> U
             }
         },
     )
+    val exportVm: ExportViewModel = viewModel(factory = viewModelFactory { initializer { ExportViewModel(app.exportCoordinator) } })
     val state by vm.state.collectAsStateWithLifecycle()
     val pullRefreshing by vm.pullRefreshing.collectAsStateWithLifecycle()
     LifecycleResumeEffect(Unit) {
@@ -64,7 +67,6 @@ fun ConversationListScreen(onOpen: (key: String) -> Unit, onDeviceCheck: () -> U
     // the field owns its text so typing never waits for the view model
     var text by rememberSaveable { mutableStateOf(state.query) }
     val snackbar = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
     val photoUri = remember(app) {
         { c: Conversation -> c.participants.singleOrNull()?.let { app.contacts.photoUri(it.normalized, it.rawAddress) } }
     }
@@ -77,7 +79,13 @@ fun ConversationListScreen(onOpen: (key: String) -> Unit, onDeviceCheck: () -> U
                 SelectionTopBar(
                     count = state.selected.size,
                     onClose = vm::clearSelection,
-                    onExport = { scope.launch { snackbar.showSnackbar("Export comes later") } },
+                    onExport = {
+                        // in the list's order; a selected row hidden since by the search still counts
+                        val order = state.conversations.withIndex().associate { (i, c) -> c.key to i }
+                        val keys = state.selected.sortedBy { order[it] ?: Int.MAX_VALUE }
+                        val filter = app.listFilter.value.forConversation()
+                        exportVm.open(keys, filter, listScopeLine(keys.size, filter))
+                    },
                 )
             } else {
                 SearchTopBar(
@@ -122,6 +130,7 @@ fun ConversationListScreen(onOpen: (key: String) -> Unit, onDeviceCheck: () -> U
             }
         }
     }
+    ExportSheets(exportVm, onDoneClosed = vm::clearSelection)
 }
 
 @Composable

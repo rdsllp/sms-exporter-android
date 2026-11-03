@@ -14,7 +14,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -29,7 +28,9 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.smsexporter.SmsExporterApp
 import com.example.smsexporter.data.MessageFilter
 import com.example.smsexporter.data.model.Conversation
-import kotlinx.coroutines.launch
+import com.example.smsexporter.ui.export.ExportSheets
+import com.example.smsexporter.ui.export.ExportViewModel
+import com.example.smsexporter.ui.export.chatScopeLine
 
 /** Drags that begin this close to the start edge are left to the system back gesture. */
 private val BACK_EDGE = 24.dp
@@ -77,11 +78,12 @@ private fun ConversationPager(
     val page = pager.currentPage.coerceIn(0, pager.pageCount - 1)
     val vm = vmFor(page)
     val state by vm.state.collectAsStateWithLifecycle()
+    val app = LocalContext.current.applicationContext as SmsExporterApp
+    val exportVm: ExportViewModel = viewModel(factory = viewModelFactory { initializer { ExportViewModel(app.exportCoordinator) } })
     // per page: a page whose search is active shows it again when it becomes current
     var searchOpen by rememberSaveable(pageKey(page)) { mutableStateOf(vm.state.value.filter.query != null) }
     var text by rememberSaveable(pageKey(page)) { mutableStateOf(vm.state.value.filter.query.orEmpty()) }
     val snackbar = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
     val closeSearch = { searchOpen = false; text = ""; vm.setSearch(null) }
     var fromEdge by remember { mutableStateOf(false) }
 
@@ -99,7 +101,9 @@ private fun ConversationPager(
                 onOpenSearch = { searchOpen = true },
                 onCloseSearch = closeSearch,
                 onBack = onBack,
-                onExport = { scope.launch { snackbar.showSnackbar("Export comes later") } },
+                onExport = {
+                    if (c != null) exportVm.open(listOf(c.key), state.filter, chatScopeLine(state.total, c.messageCount, state.filter))
+                },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
@@ -125,6 +129,7 @@ private fun ConversationPager(
             ConversationPage(vmFor(page))
         }
     }
+    ExportSheets(exportVm)
 }
 
 /** "27 messages", or "4 of 27 match" when the filter narrows the conversation. */
