@@ -9,7 +9,8 @@ import java.io.InputStream
  * - canonical: one id (1, 2, ...) per distinct address in `sms.address` and `addrs.address`,
  *   in first-seen order;
  * - threads: one per distinct `threadId`; `recipientIds` = canonical ids of the addresses seen
- *   in that thread; `messageCount` = sms + mms rows; `dateMs`/`snippet` from the newest row;
+ *   in that thread; `messageCount` = sms + mms rows; `dateMs` from the newest row; `snippet` =
+ *   the newest row's body when it is an sms, else null (as on the device for RCS threads);
  *   `hasAttachment` = any part of its mms that is not text/plain or application/smil.
  *
  * `bodyContains` is a literal substring match folding ASCII A-Z only, like SQLite LIKE.
@@ -61,12 +62,14 @@ class FakeMessageSource(
 
     override suspend fun newestPerThread(): Map<Long, ThreadNewest> {
         val out = HashMap<Long, ThreadNewest>()
-        mms.forEach { m ->
+        // newest first, like the provider's `date DESC, _id DESC`: the first row per thread wins
+        mms.sortedWith(compareByDescending<RawMms> { it.dateMs }.thenByDescending { it.id }).forEach { m ->
+            if (m.threadId in out) return@forEach
             val kind = if (m.trId?.startsWith("proto:") == true) MessageKind.RCS else MessageKind.MMS
-            if ((out[m.threadId]?.dateMs ?: Long.MIN_VALUE) < m.dateMs) out[m.threadId] = ThreadNewest(m.dateMs, kind)
+            out[m.threadId] = ThreadNewest(m.dateMs, kind, m.id)
         }
         sms.forEach { s ->
-            if ((out[s.threadId]?.dateMs ?: Long.MIN_VALUE) < s.dateMs) out[s.threadId] = ThreadNewest(s.dateMs, MessageKind.SMS)
+            if ((out[s.threadId]?.dateMs ?: Long.MIN_VALUE) < s.dateMs) out[s.threadId] = ThreadNewest(s.dateMs, MessageKind.SMS, null)
         }
         return out
     }
@@ -140,8 +143,8 @@ class FakeMessageSource(
             val newestSms = tSms.maxByOrNull { it.dateMs }
             val newestMms = tMms.maxByOrNull { it.dateMs }
             val newestIsSms = newestSms != null && (newestMms == null || newestSms.dateMs >= newestMms.dateMs)
-            val snippet = if (newestIsSms) newestSms!!.body
-            else tParts.firstOrNull { it.mid == newestMms!!.id && it.contentType == "text/plain" }?.text
+            // like the device, the thread snippet is empty when the newest row is an mms/RCS one
+            val snippet = if (newestIsSms) newestSms!!.body else null
             RawThread(
                 id = tid,
                 recipientIds = addresses.mapNotNull { idOf[it] },

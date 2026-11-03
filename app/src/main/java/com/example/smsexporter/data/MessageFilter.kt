@@ -52,3 +52,10 @@ data class MessageFilter(
         val DAY: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH)
     }
 }
+
+/**
+ * The filter an opened conversation starts with: the list's date range and attachment filter.
+ * The list's query and Type chip are dropped: the Type chip matches only a conversation's most
+ * recent message (spec §6.1), so it must not hide the conversation's other messages.
+ */
+fun MessageFilter.forConversation(): MessageFilter = copy(query = null, kind = null)

@@ -52,6 +52,7 @@ class ConversationListViewModel(
     private val log: (String) -> Unit = { Log.i("Perf", it) },
     private val onFilterChanged: (MessageFilter) -> Unit = {},
     private val onOrderChanged: (List<String>) -> Unit = {},
+    private val nowMs: () -> Long = { System.nanoTime() / 1_000_000 },
 ) : ViewModel() {
     /** Null while the first load is running. */
     private val all = MutableStateFlow<List<Conversation>?>(null)
@@ -62,6 +63,11 @@ class ConversationListViewModel(
 
     private var loadedOnce = false
     private var refreshJob: Job? = null
+    @Volatile private var lastLoadDoneMs: Long? = null
+    private val _pullRefreshing = MutableStateFlow(false)
+
+    /** True from a [pullToRefresh] until its list is published. */
+    val pullRefreshing: StateFlow<Boolean> = _pullRefreshing
     @Volatile private var refreshStartNs = 0L
     @Volatile private var firstStateLogged = false
 
@@ -124,8 +130,26 @@ class ConversationListViewModel(
     fun clearSelection() { selected.value = emptySet() }
 
     /**
+     * Screen resumed: reloads unless a load is running or the last one completed at most
+     * [RESUME_RELOAD_MS] ago (so returning from a conversation does not re-scan every time).
+     */
+    fun onResumed() {
+        if (refreshJob?.isActive == true) return
+        val last = lastLoadDoneMs
+        if (last == null || nowMs() - last > RESUME_RELOAD_MS) refresh()
+    }
+
+    /** Pull-to-refresh: like [refresh], with [pullRefreshing] true until the new list is shown. */
+    fun pullToRefresh() {
+        _pullRefreshing.value = true
+        refresh()
+    }
+
+    /**
      * Loads the conversations (re-reading the provider after the first time), then fills kind
      * tags. A new call cancels a running one; a kind fill is dropped if a newer list was published.
+     * The first call shows the repository's cached list at once when it has one (it outlives this
+     * view model), then re-reads the provider as well, since that list may be stale.
      */
     fun refresh() {
         refreshStartNs = System.nanoTime()
@@ -135,14 +159,22 @@ class ConversationListViewModel(
         refreshJob?.cancel()
         refreshJob = viewModelScope.launch(dispatcher) {
             try {
-                val list = repo.conversations(refresh = reload)
-                all.value = list
+                val cached = if (reload) null else repo.cachedConversations()
+                if (cached != null) all.value = cached
+                val shown = all.value
+                val list = repo.conversations(refresh = reload || cached != null)
+                // with nothing on screen yet show the list at once; otherwise keep the shown
+                // list (with its kinds and snippets) until the filled one replaces it
+                if (shown == null) all.value = list
                 val filled = repo.fillLastKinds()
-                if (all.value === list) all.value = filled
+                if (all.value === list || all.value === shown) all.value = filled
+                lastLoadDoneMs = nowMs()
+                _pullRefreshing.value = false
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.w("ListVm", "load failed", e)
+                _pullRefreshing.value = false
                 if (all.value == null) all.value = emptyList()
             }
         }
@@ -172,5 +204,6 @@ class ConversationListViewModel(
     private companion object {
         const val DEBOUNCE_MS = 150L
         const val BODY_SEARCH_MIN = 3
+        const val RESUME_RELOAD_MS = 5_000L
     }
 }

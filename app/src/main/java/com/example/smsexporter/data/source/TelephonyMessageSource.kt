@@ -235,7 +235,8 @@ class TelephonyMessageSource(private val resolver: ContentResolver) : MessageSou
     override suspend fun newestPerThread(): Map<Long, ThreadNewest> = withContext(Dispatchers.IO) {
         val out = HashMap<Long, ThreadNewest>()
         // Rows come newest first, so the first row seen for a thread is its newest.
-        resolver.query(MMS_URI, arrayOf("thread_id", "date", "tr_id"), null, null, "date DESC, _id DESC")?.use { c ->
+        resolver.query(MMS_URI, arrayOf("_id", "thread_id", "date", "tr_id"), null, null, "date DESC, _id DESC")?.use { c ->
+            val id = c.getColumnIndexOrThrow("_id")
             val t = c.getColumnIndexOrThrow("thread_id")
             val d = c.getColumnIndexOrThrow("date")
             val tr = c.getColumnIndexOrThrow("tr_id")
@@ -243,7 +244,7 @@ class TelephonyMessageSource(private val resolver: ContentResolver) : MessageSou
                 val tid = c.getLong(t)
                 if (tid in out) continue
                 val kind = if (c.getStringOrNull(tr)?.startsWith("proto:") == true) MessageKind.RCS else MessageKind.MMS
-                out[tid] = ThreadNewest(c.getLong(d) * 1000L, kind)
+                out[tid] = ThreadNewest(c.getLong(d) * 1000L, kind, c.getLong(id))
             }
         }
         val smsSeen = HashSet<Long>()
@@ -255,7 +256,7 @@ class TelephonyMessageSource(private val resolver: ContentResolver) : MessageSou
                 if (!smsSeen.add(tid)) continue
                 val date = c.getLong(d)
                 val mms = out[tid]
-                if (mms == null || date > mms.dateMs) out[tid] = ThreadNewest(date, MessageKind.SMS)
+                if (mms == null || date > mms.dateMs) out[tid] = ThreadNewest(date, MessageKind.SMS, null)
             }
         }
         out

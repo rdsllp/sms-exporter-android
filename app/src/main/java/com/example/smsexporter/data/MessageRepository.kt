@@ -8,6 +8,7 @@ import com.example.smsexporter.data.model.Source
 import com.example.smsexporter.data.source.MessageSource
 import com.example.smsexporter.data.source.PageKey
 import com.example.smsexporter.data.source.RawMms
+import com.example.smsexporter.data.source.RawPart
 import com.example.smsexporter.data.source.RawSms
 import com.example.smsexporter.data.source.RowFilter
 import kotlinx.coroutines.Dispatchers
@@ -64,20 +65,35 @@ class MessageRepository(
         return built
     }
 
+    /** The cached conversations, or null before the first load. Never reads the provider. */
+    fun cachedConversations(): List<Conversation>? = cache
+
     suspend fun conversation(key: String): Conversation? = conversations().firstOrNull { it.key == key }
 
     /**
      * Sets `lastKind` on every cached conversation from the newest row among its threads (null
-     * when none of its threads has rows), using one scan per table. Stores and returns the result.
+     * when none of its threads has rows), using one scan per table. Also fills a blank `snippet`
+     * when that newest row is an mms/RCS one (the provider leaves the thread snippet empty for
+     * RCS): its first non-blank text part, else a placeholder for its attachment, from one
+     * parts query. Stores and returns the result.
      */
     suspend fun fillLastKinds(): List<Conversation> {
         val conversations = conversations()
         val t0 = System.nanoTime()
         val newest = source.newestPerThread()
-        val filled = conversations.map { c ->
-            c.copy(lastKind = c.threadIds.mapNotNull { newest[it] }.maxByOrNull { it.dateMs }?.kind)
+        val newestOf = conversations.map { c -> c.threadIds.mapNotNull { newest[it] }.maxByOrNull { it.dateMs } }
+        val needSnippet = conversations.indices.mapNotNull { i ->
+            newestOf[i]?.mmsId?.takeIf { conversations[i].snippet.isNullOrBlank() }
         }
-        log("fillLastKinds ${ms(t0, System.nanoTime())} ms")
+        val t1 = System.nanoTime()
+        val partSnippets = if (needSnippet.isEmpty()) emptyMap()
+        else source.parts(needSnippet).mapValues { (_, parts) -> mmsSnippet(parts) }
+        val filled = conversations.mapIndexed { i, c ->
+            val n = newestOf[i]
+            val snippet = if (c.snippet.isNullOrBlank()) n?.mmsId?.let { partSnippets[it] } ?: c.snippet else c.snippet
+            c.copy(lastKind = n?.kind, snippet = snippet)
+        }
+        log("fillLastKinds ${ms(t0, System.nanoTime())} ms (snippets for ${needSnippet.size} mms in ${ms(t1, System.nanoTime())} ms)")
         // skip the store if a refresh replaced the cache meanwhile
         cacheLock.withLock { if (cache === conversations) cache = filled }
         return filled
@@ -129,7 +145,7 @@ class MessageRepository(
         while (true) {
             val p = page(conversation, filter, cursor, ALL_STEP)
             out += p
-            if (p.size < ALL_STEP) return out
+            if (p.size < ALL_STEP) return attachReactions(out)   // again over all, so reactions match across blocks
             cursor = PageCursor.of(p.last())
         }
     }
@@ -157,6 +173,20 @@ class MessageRepository(
 
     private companion object {
         const val ALL_STEP = 500
+        const val SNIPPET_MAX = 120
+
+        /** First non-blank text part (trimmed, at most [SNIPPET_MAX] chars), else an attachment placeholder, else null. */
+        fun mmsSnippet(parts: List<RawPart>): String? {
+            parts.firstOrNull { it.contentType == "text/plain" && !it.text.isNullOrBlank() }
+                ?.let { return it.text!!.trim().take(SNIPPET_MAX) }
+            val media = parts.filter { it.contentType != "text/plain" && it.contentType != "application/smil" }
+            return when {
+                media.any { it.contentType?.startsWith("image/") == true } -> "\uD83D\uDCF7 Photo"
+                media.any { it.contentType?.startsWith("video/") == true } -> "\uD83C\uDFAC Video"
+                media.isNotEmpty() -> "\uD83D\uDCCE Attachment"
+                else -> null
+            }
+        }
 
         fun ms(fromNs: Long, toNs: Long) = (toNs - fromNs) / 1_000_000
 

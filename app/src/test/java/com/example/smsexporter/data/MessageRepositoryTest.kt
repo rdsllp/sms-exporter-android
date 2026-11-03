@@ -153,4 +153,55 @@ class MessageRepositoryTest {
         )
         assertEquals("from 1 Jan 2026", MessageFilter(startMs = jan1).describe())
     }
+    @Test fun fillLastKindsFillsRcsSnippetFromTextPart() = runTest {
+        // thread 1: newest row is an RCS message with a long text part; thread 2: newest row is an sms.
+        // Neither thread snippet comes from the provider for the RCS one (null, as on the device).
+        val long = "  " + "x".repeat(130) + "  "
+        val fake = FakeMessageSource(
+            sms = listOf(RawSms(1, 1, "+911111111111", 1, 1000, "old sms"), RawSms(2, 2, "+912222222222", 1, 4000, "newest sms")),
+            mms = listOf(RawMms(3, 1, 1, 3000, "proto:a", related, true)),
+            parts = listOf(RawPart(30, 3, "application/smil", null, "<smil/>", null), RawPart(31, 3, "text/plain", null, long, null)),
+            addrs = listOf(RawAddr(3, "+911111111111", 137)),
+        )
+        val repo = MessageRepository(fake, noNames, log = {})
+        assertNull(repo.conversations().single { it.threadIds == listOf(1L) }.snippet)
+        val filled = repo.fillLastKinds()
+        assertEquals("x".repeat(120), filled.single { it.threadIds == listOf(1L) }.snippet)
+        assertEquals("newest sms", filled.single { it.threadIds == listOf(2L) }.snippet)   // left alone
+        assertEquals(filled, repo.conversations())
+    }
+
+    @Test fun fillLastKindsUsesPhotoPlaceholderWhenNoText() = runTest {
+        val fake = FakeMessageSource(
+            sms = emptyList(),
+            mms = listOf(
+                RawMms(1, 1, 1, 3000, "proto:a", related, false),
+                RawMms(2, 2, 1, 3000, "T2", related, false),
+                RawMms(3, 3, 1, 3000, "T3", related, false),
+            ),
+            parts = listOf(
+                RawPart(10, 1, "image/jpeg", "a.jpg", null, "/x/a.jpg"),
+                RawPart(20, 2, "video/mp4", "v.mp4", null, "/x/v.mp4"),
+                RawPart(30, 3, "application/pdf", "d.pdf", null, "/x/d.pdf"),
+            ),
+            addrs = listOf(RawAddr(1, "+911111111111", 137), RawAddr(2, "+912222222222", 137), RawAddr(3, "+913333333333", 137)),
+        )
+        val repo = MessageRepository(fake, noNames, log = {})
+        val snippets = repo.fillLastKinds().associate { it.threadIds.single() to it.snippet }
+        assertEquals(mapOf(1L to "\uD83D\uDCF7 Photo", 2L to "\uD83C\uDFAC Video", 3L to "\uD83D\uDCCE Attachment"), snippets)
+    }
+
+    @Test fun allAttachesReactionAcrossPageBoundary() = runTest {
+        // 501 rows: the newest is a received reaction, the oldest (501st newest-first, in the second 500-row
+        // block of all()) is the message it reacts to.
+        val zwsp = "\u200B"
+        val rows = (1L..501L).map { i ->
+            val body = when (i) { 1L -> "target"; 501L -> "${zwsp}\uD83D\uDC4D$zwsp to 'target'"; else -> "filler $i" }
+            RawSms(i, 9, "+919999999999", 1, i * 1000, body)
+        }
+        val repo = MessageRepository(FakeMessageSource(rows, emptyList(), emptyList(), emptyList()), noNames, log = {})
+        val all = repo.all(repo.conversations().single(), MessageFilter())
+        assertEquals(501, all.size)
+        assertEquals("sms:1", all.first().reaction?.targetId?.toString())
+    }
 }

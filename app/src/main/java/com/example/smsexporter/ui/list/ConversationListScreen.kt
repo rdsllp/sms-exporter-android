@@ -8,11 +8,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -33,7 +36,11 @@ import com.example.smsexporter.SmsExporterApp
 import com.example.smsexporter.data.model.Conversation
 import kotlinx.coroutines.launch
 
-/** The merged conversation list with search, filter chips, sort and multi-select. */
+/**
+ * The merged conversation list with search, filter chips, sort and multi-select. Reloads on
+ * resume (at most every few seconds) and on pull-to-refresh.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConversationListScreen(onOpen: (key: String) -> Unit) {
     val app = LocalContext.current.applicationContext as SmsExporterApp
@@ -49,6 +56,11 @@ fun ConversationListScreen(onOpen: (key: String) -> Unit) {
         },
     )
     val state by vm.state.collectAsStateWithLifecycle()
+    val pullRefreshing by vm.pullRefreshing.collectAsStateWithLifecycle()
+    LifecycleResumeEffect(Unit) {
+        vm.onResumed()
+        onPauseOrDispose { }
+    }
     // the field owns its text so typing never waits for the view model
     var text by rememberSaveable { mutableStateOf(state.query) }
     val snackbar = remember { SnackbarHostState() }
@@ -80,28 +92,30 @@ fun ConversationListScreen(onOpen: (key: String) -> Unit) {
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             FilterChipsRow(state.filter, vm::setFilter)
-            when {
-                state.loading -> Centered { CircularProgressIndicator() }
-                state.conversations.isEmpty() -> Centered {
-                    val narrowed = state.query.isNotBlank() || state.filter.isActive
-                    Text(
-                        if (narrowed) "No conversations match" else "No conversations",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-                else -> LazyColumn(Modifier.fillMaxSize()) {
-                    items(state.conversations, key = { it.key }) { c ->
-                        val selected = c.key in state.selected
-                        ConversationRow(
-                            conversation = c,
-                            selected = selected,
-                            photoUri = photoUri,
-                            onClick = { if (state.selectionMode) vm.toggleSelected(c.key) else onOpen(c.key) },
-                            onLongClick = { vm.toggleSelected(c.key) },
-                            onSwipe = { vm.toggleSelected(c.key) },
+            PullToRefreshBox(isRefreshing = pullRefreshing, onRefresh = vm::pullToRefresh, modifier = Modifier.fillMaxSize()) {
+                when {
+                    state.loading -> Centered { CircularProgressIndicator() }
+                    state.conversations.isEmpty() -> Centered {
+                        val narrowed = state.query.isNotBlank() || state.filter.isActive
+                        Text(
+                            if (narrowed) "No conversations match" else "No conversations",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
                         )
+                    }
+                    else -> LazyColumn(Modifier.fillMaxSize()) {
+                        items(state.conversations, key = { it.key }) { c ->
+                            val selected = c.key in state.selected
+                            ConversationRow(
+                                conversation = c,
+                                selected = selected,
+                                photoUri = photoUri,
+                                onClick = { if (state.selectionMode) vm.toggleSelected(c.key) else onOpen(c.key) },
+                                onLongClick = { vm.toggleSelected(c.key) },
+                                onSwipe = { vm.toggleSelected(c.key) },
+                            )
+                        }
                     }
                 }
             }

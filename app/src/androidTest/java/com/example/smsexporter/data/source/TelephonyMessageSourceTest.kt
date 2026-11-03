@@ -10,6 +10,7 @@ import com.example.smsexporter.data.ContactResolver
 import com.example.smsexporter.data.ConversationIndex
 import com.example.smsexporter.data.MessageFilter
 import com.example.smsexporter.data.MessageRepository
+import com.example.smsexporter.data.model.MessageKind
 import com.example.smsexporter.data.NameLookup
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -65,13 +66,16 @@ import org.junit.runner.RunWith
         val filled = repo.fillLastKinds()
         val fillMs = (System.nanoTime() - t1) / 1_000_000
         val withKind = filled.count { it.lastKind != null }
+        val mmsLast = filled.filter { it.lastKind == MessageKind.RCS || it.lastKind == MessageKind.MMS }
+        val mmsWithSnippet = mmsLast.count { !it.snippet.isNullOrBlank() }
         val t2 = System.nanoTime()
         val page = repo.page(conversations.first(), MessageFilter(), null)
         val pageMs = (System.nanoTime() - t2) / 1_000_000
-        Log.i("TelephonyMessageSourceTest", "conversations=${conversations.size} conversationsMs=$convMs fillLastKindsMs=$fillMs withKind=$withKind page=${page.size} pageMs=$pageMs")
+        Log.i("TelephonyMessageSourceTest", "conversations=${conversations.size} conversationsMs=$convMs fillLastKindsMs=$fillMs withKind=$withKind rcsOrMmsLast=${mmsLast.size} withSnippet=$mmsWithSnippet page=${page.size} pageMs=$pageMs")
         assertTrue("conversations took ${convMs}ms", convMs < 1000)
         assertTrue("fillLastKinds took ${fillMs}ms", fillMs < 2000)
         assertTrue("only $withKind of ${filled.size} have lastKind", withKind * 10 >= filled.size * 9)
+        assertTrue("only $mmsWithSnippet of ${mmsLast.size} RCS/MMS-last conversations have a snippet", mmsWithSnippet * 10 >= mmsLast.size * 8)
         assertTrue("page took ${pageMs}ms", pageMs < 300)
     }
     @Test fun contactResolverResolvesSavedNumberAndSkipsSenderIds() {

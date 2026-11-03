@@ -4,10 +4,12 @@ import com.example.smsexporter.data.MessageFilter
 import com.example.smsexporter.data.MessageRepository
 import com.example.smsexporter.data.NameLookup
 import com.example.smsexporter.data.source.FakeMessageSource
+import com.example.smsexporter.data.source.MessageSource
 import com.example.smsexporter.data.source.RawAddr
 import com.example.smsexporter.data.source.RawMms
 import com.example.smsexporter.data.source.RawPart
 import com.example.smsexporter.data.source.RawSms
+import com.example.smsexporter.data.source.RawThread
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -154,5 +156,50 @@ class ConversationListViewModelTest {
         vm.setFilter(MessageFilter(startMs = 2500))  // date range hides only rows older than the start
         advanceUntilIdle()
         assertEquals(listOf("JD-AxisBk"), vm.titles())
+    }
+    /** Counts [threads] calls, i.e. how often the repository re-reads the provider. */
+    private class CountingSource(private val inner: MessageSource) : MessageSource by inner {
+        var threadsCalls = 0
+        override suspend fun threads(): List<RawThread> { threadsCalls++; return inner.threads() }
+    }
+
+    @Test fun secondRefreshBypassesCache() = runTest(dispatcher) {
+        val counting = CountingSource(source)
+        val vm = ConversationListViewModel(MessageRepository(counting, names, log = {}), dispatcher, log = {})
+        advanceUntilIdle()
+        assertEquals(1, counting.threadsCalls)
+        vm.refresh()
+        advanceUntilIdle()
+        assertEquals(2, counting.threadsCalls)
+    }
+
+    @Test fun newViewModelReloadsWhenRepositoryAlreadyCached() = runTest(dispatcher) {
+        // the owner backs out (view model cleared) and returns: the repository lives on and
+        // still holds the old list, which the new view model must not keep showing
+        val counting = CountingSource(source)
+        val repo = MessageRepository(counting, names, log = {})
+        repo.conversations()
+        assertEquals(1, counting.threadsCalls)
+        val vm = ConversationListViewModel(repo, dispatcher, log = {})
+        advanceUntilIdle()
+        assertEquals(2, counting.threadsCalls)
+        assertEquals(3, vm.state.value.conversations.size)
+    }
+
+    @Test fun onResumedWithinFiveSecondsDoesNotRefresh() = runTest(dispatcher) {
+        val counting = CountingSource(source)
+        var now = 100_000L
+        val vm = ConversationListViewModel(MessageRepository(counting, names, log = {}), dispatcher, log = {}, nowMs = { now })
+        vm.onResumed()                          // first load still running: no second scan
+        advanceUntilIdle()
+        assertEquals(1, counting.threadsCalls)
+        now += 4_000
+        vm.onResumed()
+        advanceUntilIdle()
+        assertEquals(1, counting.threadsCalls)
+        now += 2_000                            // 6 s after the last completed load
+        vm.onResumed()
+        advanceUntilIdle()
+        assertEquals(2, counting.threadsCalls)
     }
 }

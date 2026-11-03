@@ -27,8 +27,11 @@ data class RawAddr(val msgId: Long, val address: String, val type: Int)   // 137
 /** Paging cursor: the `(dateMs, id)` of the last row of the previous page. */
 data class PageKey(val dateMs: Long, val id: Long)
 
-/** Date and kind of the newest row of a thread across both tables. `dateMs` is milliseconds. */
-data class ThreadNewest(val dateMs: Long, val kind: MessageKind)
+/**
+ * Date and kind of the newest row of a thread across both tables. `dateMs` is milliseconds.
+ * [mmsId] is that row's `_id` when it is an mms/RCS row, null when it is an sms.
+ */
+data class ThreadNewest(val dateMs: Long, val kind: MessageKind, val mmsId: Long?)
 
 data class RowFilter(val startMs: Long? = null, val endMs: Long? = null, val bodyContains: String? = null)
 
