@@ -30,9 +30,9 @@ object CsvWriter {
         attachmentNames: (Message) -> List<String>,
     ) {
         val fmt = DateTimeFormatter.ISO_OFFSET_DATE_TIME
-        out.write("﻿")
+        out.write("\uFEFF")
         val stamp = exportedAt.truncatedTo(ChronoUnit.SECONDS).format(fmt)
-        val filterText = if (filter.isActive) filter.describe() else "none"
+        val filterText = if (filter.isActive) filter.describe().replace('\r', ' ').replace('\n', ' ') else "none"
         out.write("# SmsExporter export $stamp · filter: $filterText$EOL")
         out.write(COLUMNS.joinToString(",") + EOL)
         for (m in messages) {
@@ -51,10 +51,10 @@ object CsvWriter {
                 m.kind.name.lowercase(),
                 m.direction.name.lowercase(),
                 guard(sender),
-                recipients.joinToString(";") { guard(it) },
+                guardJoined(recipients),
                 time,
                 guard(m.body ?: ""),
-                attachmentNames(m).joinToString(";") { guard(it) },
+                guardJoined(attachmentNames(m)),
                 guard(m.reaction?.targetId?.toString() ?: ""),
             )
             out.write(cells.joinToString(",") { cell(it) } + EOL)
@@ -64,6 +64,13 @@ object CsvWriter {
     /** Neutralises a leading formula character; phone numbers are left intact. */
     private fun guard(raw: String): String =
         if (raw.isNotEmpty() && raw[0] in FORMULA_START && !PHONE_LIKE.matches(raw)) "'$raw" else raw
+
+    /** Joins with `;` then guards once: only the cell's first character matters to a spreadsheet. */
+    private fun guardJoined(items: List<String>): String {
+        val joined = items.joinToString(";")
+        val first = items.firstOrNull() ?: return joined
+        return if (joined[0] in FORMULA_START && !PHONE_LIKE.matches(first)) "'$joined" else joined
+    }
 
     /** Quotes an already-guarded cell if it needs it. */
     private fun cell(safe: String): String {

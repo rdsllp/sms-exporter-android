@@ -53,18 +53,18 @@ class CsvWriterTest {
 
     @Test
     fun bomPresent() {
-        assertTrue(csv(emptyList()).startsWith("﻿# SmsExporter"))
+        assertTrue(csv(emptyList()).startsWith("\uFEFF# SmsExporter"))
     }
 
     @Test
     fun headerAndCommentLine() {
         val plain = csv(emptyList())
         assertEquals(
-            "﻿# SmsExporter export 2026-11-02T09:05:07+05:30 · filter: none\r\n$header\r\n",
+            "\uFEFF# SmsExporter export 2026-11-02T09:05:07+05:30 · filter: none\r\n$header\r\n",
             plain,
         )
         val filtered = csv(emptyList(), MessageFilter(query = "axis"))
-        assertTrue(filtered, filtered.startsWith("﻿# SmsExporter export 2026-11-02T09:05:07+05:30 · filter: \"axis\"\r\n$header\r\n"))
+        assertTrue(filtered, filtered.startsWith("\uFEFF# SmsExporter export 2026-11-02T09:05:07+05:30 · filter: \"axis\"\r\n$header\r\n"))
     }
 
     @Test
@@ -95,5 +95,21 @@ class CsvWriterTest {
         )
         assertTrue(lines[4], lines[4].endsWith(",\"Liked \"\"hi\"\"\",,sms:1"))
         assertFalse(out.contains("'+919800997986"))
+    }
+
+    @Test
+    fun joinedCellsAreGuardedOnce() {
+        val a = msg(1)
+        val b = msg(2)
+        val out = csv(listOf(a, b), names = { if (it.id.rowId == 1L) listOf("photo.jpg", "@2x.png", "-x") else listOf("=x", "y") })
+        val lines = out.split("\r\n")
+        assertTrue(lines[2], lines[2].endsWith(",\"photo.jpg;@2x.png;-x\","))
+        assertTrue(lines[3], lines[3].endsWith(",\"'=x;y\","))
+    }
+
+    @Test
+    fun filterNewlinesDoNotBreakCommentLine() {
+        val out = csv(emptyList(), MessageFilter(query = "a\nb"))
+        assertEquals(2, out.trimEnd().split("\r\n").size)
     }
 }
