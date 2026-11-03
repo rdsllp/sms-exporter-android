@@ -6,7 +6,7 @@ import com.example.smsexporter.data.model.Reaction
 import java.text.BreakIterator
 
 private const val ZWSP = "​"
-private val RECEIVED_REACTION = Regex("^$ZWSP(.+?)$ZWSP to '(.*)'$")
+private val RECEIVED_REACTION = Regex("^$ZWSP(.+?)$ZWSP to '(.*)'$", RegexOption.DOT_MATCHES_ALL)
 
 /** Returns (emoji, quotedText) for a received RCS reaction body, or null if it is not one. */
 fun parseReceivedReaction(body: String): Pair<String, String>? {

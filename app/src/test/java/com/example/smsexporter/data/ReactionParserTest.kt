@@ -71,4 +71,15 @@ class ReactionParserTest {
         val b = a.copy(id = MessageId.parse("sms:2"), body = null)
         assertEquals(listOf(a, b), attachReactions(listOf(a, b)))
     }
+
+    @Test fun parsesReactionToMultiLineQuote() {
+        assertEquals("👍" to "line1\nline2", parseReceivedReaction("$z👍$z to ' line1\nline2 '"))
+    }
+
+    @Test fun attachesToMultiLineTarget() {
+        val target = msg("mms:1", 1000, Direction.SENT, "line1\nline2")
+        val r = msg("mms:2", 2000, Direction.RECEIVED, "$z👍$z to ' line1\nline2 '")
+        val out = attachReactions(listOf(r, target))
+        assertEquals(target.id, out[0].reaction?.targetId)
+    }
 }
