@@ -41,13 +41,15 @@ data class ListUiState(
 /**
  * Conversation list: keeps every conversation in memory and derives the visible, sorted list
  * from (query, filter, sort). [dispatcher] runs loading and list derivation; [log] receives the
- * refresh timing (replaced in unit tests, where android.util.Log is unavailable).
+ * refresh timing (replaced in unit tests, where android.util.Log is unavailable);
+ * [onFilterChanged] receives every [setFilter] value.
  */
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 class ConversationListViewModel(
     private val repo: MessageRepository,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val log: (String) -> Unit = { Log.i("ListVm", it) },
+    private val onFilterChanged: (MessageFilter) -> Unit = {},
 ) : ViewModel() {
     /** Null while the first load is running. */
     private val all = MutableStateFlow<List<Conversation>?>(null)
@@ -114,7 +116,7 @@ class ConversationListViewModel(
 
     fun setQuery(q: String) { query.value = q }
     fun setSort(s: SortOrder) { sort.value = s }
-    fun setFilter(f: MessageFilter) { filter.value = f }
+    fun setFilter(f: MessageFilter) { filter.value = f; onFilterChanged(f) }
     fun toggleSelected(key: String) = selected.update { if (key in it) it - key else it + key }
     fun clearSelection() { selected.value = emptySet() }
 
