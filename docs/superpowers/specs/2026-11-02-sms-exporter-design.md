@@ -288,3 +288,31 @@ airplane-mode-gated design).
 
 Author's calls (owner may overrule): attachment folder layout and image fidelity (§7); auto-zip of single CSV/JSON
 exports with attachments (§7); message-type chip matches last message only (§6.1).
+
+## 12. Pixel verification results (2026-11-04)
+
+Release build f7346d0 on the owner's second phone, run by a friend and reported back
+through the Device check screen:
+
+```
+SmsExporter 1.0 (f7346d0) · Google Pixel 10 · Android 17 (SDK 37) · default SMS app: com.google.android.apps.messaging
+permissions: READ_SMS=yes READ_CONTACTS=yes
+rows: sms=9581 mms=50283 rcs=50782 threads=315 conversations=315
+rcs last 7 days: 165 (sent 69, received 96)
+newest rcs rows: 2026-11-03 13:39 recv thread 34 parts 1 text 56 chars · 2026-11-03 13:01 recv thread 2 parts 1 text 18 chars · 2026-11-03 12:41 sent thread 2 parts 2 text 20 chars · 2026-11-03 10:52 recv thread 2 parts 1 text 46 chars · 2026-11-03 10:52 recv thread 2 parts 1 text 9 chars
+image part read: ok (1808x2896, 1173 KB)
+timings ms: threads+addresses=31 conversations=32 lastKinds=1049 firstPage=86 (37 rows)
+crash log: none
+```
+
+Outcome: every table is readable without the SMS role on the Pixel as on the Samsung,
+RCS rows included, sent and received, with the newest rows from the same day. No
+crash. `lastKinds` (classifying each conversation's newest message) took 1049 ms
+against 266 ms on the Samsung, still inside the §8 list budget; the other timings are
+well under it. Nothing here calls for the dropped default-app mode (§5.7).
+
+Install note: on this Pixel the first SMS request was auto-denied with the system
+toast "App was denied access to SMS". That is Android's restricted-settings block for
+apps installed from an APK file rather than a store; the user has to choose "Allow
+restricted settings" in the app's App info menu, after which the grant works. The
+Pixel instructions in the project docs folder now include that step.
